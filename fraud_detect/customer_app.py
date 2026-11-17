@@ -38,6 +38,7 @@ from fastapi.templating import Jinja2Templates
 
 from .ml.gnn import gnn_lookup
 from .models import ApplicationDetails, Case, ReviewDecision
+from .nodes import ml_statement, ml_transaction
 from .pipeline import run_pipeline
 from .registry import live_lookup_lifespan
 from .store import CaseStore
@@ -106,6 +107,15 @@ store = CaseStore(str(BASE.parent / "data" / "cases.json"))
 
 # Load the precomputed GNN scores once at startup (fail-safe to None if absent).
 GNN_SCORES = gnn_lookup.load_scores()
+
+# Load the trained ML models once at startup. This portal is the ONLY place a
+# live statement is screened (the analyst console no longer screens), so the
+# models must be loaded and passed here, or Nodes 6a/6b never run in production.
+# Both loaders are fail-safe: they return None when the .joblib file is absent,
+# and the pipeline then skips that node. 6a's transaction scoring stays off
+# unless FRAUD_ENABLE_TXN_MODEL is set (see ml_transaction.ENABLE_ENV).
+TXN_MODEL = ml_transaction.load_live_model()
+STATEMENT_MODEL = ml_statement.load_model()
 
 
 # --------------------------------------------------------------------------- #
@@ -237,7 +247,10 @@ async def apply(
         raise HTTPException(status_code=400, detail="The uploaded file was empty")
 
     # Screen through the exact same pipeline the analyst app uses.
-    report = run_pipeline(str(dest), store=store, gnn_scores=GNN_SCORES)
+    report = run_pipeline(
+        str(dest), store=store, gnn_scores=GNN_SCORES,
+        txn_model=TXN_MODEL, statement_model=STATEMENT_MODEL,
+    )
     store.upsert_report(report)
 
     # Persist what the APPLICANT TYPED (distinct from the statement-parsed name),

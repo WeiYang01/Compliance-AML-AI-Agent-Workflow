@@ -39,14 +39,16 @@ def test_enabled_but_missing_file_is_still_fail_safe(tmp_path):
     assert mt.load_live_model(str(tmp_path / "absent.joblib"), env={mt.ENABLE_ENV: "1"}) is None
 
 
-def test_web_app_starts_with_the_model_off(monkeypatch):
+def test_customer_portal_starts_with_the_model_off(monkeypatch):
+    # The customer portal is the only app that screens live statements, so it is
+    # where the off-by-default switch has to hold.
     import importlib
 
     monkeypatch.delenv(mt.ENABLE_ENV, raising=False)
     monkeypatch.delenv("AUDIT_SIGNING_KEY_PATH", raising=False)
-    import fraud_detect.webapp as webapp
-    webapp = importlib.reload(webapp)
-    assert webapp.TXN_MODEL is None
+    import fraud_detect.customer_app as customer_app
+    customer_app = importlib.reload(customer_app)
+    assert customer_app.TXN_MODEL is None
 
 
 def test_gnn_lookup_still_runs_with_the_model_off(tmp_path):
