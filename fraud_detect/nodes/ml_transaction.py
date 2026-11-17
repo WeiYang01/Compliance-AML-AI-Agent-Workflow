@@ -9,6 +9,7 @@ the node returns no findings (it never fabricates a score).
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -16,6 +17,7 @@ import pandas as pd
 from ..models import AgentReport, Finding, IngestionResult, Severity
 from ..ml import transaction_features as tf
 from ..ml.gnn import gnn_lookup
+from ..paths import MODELS_DIR
 
 AGENT = "Node6a:MLTransaction"
 # Distinct sub-label so the GNN signal counts as an independent agent for Node 4
@@ -44,7 +46,7 @@ _GNN_MEDIUM = 0.50
 ENABLE_ENV = "FRAUD_ENABLE_TXN_MODEL"
 
 
-def load_live_model(path: str = "models/txn_fraud_clf.joblib", env=None):
+def load_live_model(path: str | Path = MODELS_DIR / "txn_fraud_clf.joblib", env=None):
     """Model for live screening, or ``None`` while the model is switched off.
 
     Returns ``None`` unless ``FRAUD_ENABLE_TXN_MODEL`` is set to a true value;
@@ -58,7 +60,7 @@ def load_live_model(path: str = "models/txn_fraud_clf.joblib", env=None):
     return load_model(path)
 
 
-def load_model(path: str = "models/txn_fraud_clf.joblib"):
+def load_model(path: str | Path = MODELS_DIR / "txn_fraud_clf.joblib"):
     """Load the saved pipeline bundle, or return None if unavailable (fail-safe)."""
     try:
         import joblib

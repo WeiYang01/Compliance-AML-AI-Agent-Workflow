@@ -12,8 +12,11 @@ statement is outside its experience; see ``assess``.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..models import AgentReport, Finding, IngestionResult, Severity
 from ..ml import statement_features as sf
+from ..paths import MODELS_DIR
 
 AGENT = "Node6b:MLStatement"
 
@@ -22,7 +25,7 @@ _HIGH_PROB = 0.80
 _MEDIUM_PROB = 0.50
 
 
-def load_model(path: str = "models/statement_forgery_clf.joblib"):
+def load_model(path: str | Path = MODELS_DIR / "statement_forgery_clf.joblib"):
     try:
         import joblib
         return joblib.load(path)
