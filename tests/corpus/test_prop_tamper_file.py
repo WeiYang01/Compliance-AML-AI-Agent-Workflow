@@ -12,7 +12,7 @@ import io
 import re
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 from pypdf import PdfReader
 
@@ -76,6 +76,8 @@ field_cases = st.tuples(st.sampled_from(FIELD_TAMPERS), cases)
 # -- Property 12 -----------------------------------------------------------
 @PBT
 @given(field_cases)
+# A date overlay on a "1 Feb"-style layout: the new value is two words.
+@example(("altered_date", ("two_col_dmon", 0, 2)))
 def test_overlay_keeps_both_values_rerender_keeps_only_new(case):
     """**Validates: Requirements 6.2, 6.4, 6.5**"""
     name, (layout, seed, months) = case
@@ -94,11 +96,17 @@ def test_overlay_keeps_both_values_rerender_keeps_only_new(case):
         # old value still extractable at the overlaid position
         assert _squash(cell.text) in _squash(
             text_at(after, cell.page, cell.top, cell.x0, cell.x1))
-        # new value present near the overlaid position
-        near = {_squash(w.text) for w in after
-                if w.page == cell.page and abs(w.top - cell.top) <= 4.0
-                and w.x1 >= cell.x0 - 80 and w.x0 <= cell.x1 + 80}
-        assert _squash(op.new) in near
+        # new value present near the overlaid position. A value such as "1 Feb"
+        # is extracted as separate words, and the new words can sit between the
+        # old ones because both are drawn in the same place, so check that the
+        # new value's words appear near the cell in left-to-right order.
+        near = [w.text for w in sorted(
+                    (w for w in after
+                     if w.page == cell.page and abs(w.top - cell.top) <= 4.0
+                     and w.x1 >= cell.x0 - 80 and w.x0 <= cell.x1 + 80),
+                    key=lambda w: w.x0)]
+        remaining = iter(near)
+        assert all(tok in remaining for tok in op.new.split()), (op.new, near)
         # every text element outside the overlaid cell is unchanged
         def outside(ws):
             return sorted(
