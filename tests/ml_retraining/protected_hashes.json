@@ -217,13 +217,13 @@
     },
     {
       "backfilled": true,
-      "date": "2026-11-08",
+      "date": "2026-11-07",
       "diff_base": "9964e73f22de5dc797efa10a26e725ddc713b769",
       "file": "fraud_detect/nodes/financial_logic.py",
       "kind": "repin",
       "new": "56a4d9aa071c82aa41c76ba3c1669fe9cd6fd3931d77b40db44587aed0cab366",
       "old": "c1506d62f46d3857f4bab42f025ef14d277ff5b2a16407b2b6b6661974037e1a",
-      "reason": "e12a5f3: Node 3 thresholds moved into FinancialLogicConfig, relative structuring, payer-never-seen rule, gap floor raised from 7 to 10 days. Deliberate Node 3 change; re-pinned by hand in that commit (recorded here afterwards)."
+      "reason": "Covers three Node 3 commits; the pin was stale from 064783a until e12a5f3 re-pinned it by hand. 064783a: FL_PERIOD_GAP limit learned from the company's gap rhythm or approved history (was a fixed 25 days). fbc84c3: FL_SUDDEN_DEPOSIT judged against the company's own credit history (was 3x average); new FL_RAPID_PASS_THROUGH rule. e12a5f3: thresholds moved into FinancialLogicConfig, relative FL_STRUCTURING, payer-never-seen FL_UNVERIFIED_COUNTERPARTY, gap-limit floor raised from 7 to 10 days. Deliberate detection changes per the owner's commit messages; no separate review of the re-pin is recorded."
     },
     {
       "backfilled": true,
@@ -233,7 +233,7 @@
       "kind": "repin",
       "new": "2fd81b3aac211a09cbc6273f5ee4a3e0d7b80e78ad8514de0c1db04222d47a68",
       "old": "57f0800d9f87abd0b05afa2a50e6a70e1eeef0964cd6685d2970f0cf7dd941bc",
-      "reason": "712cca9: 392ce09 added account_number, statement_period_start and statement_period_end to the RiskReport constructor after scoring and routing are computed. Display-only; Node 4 golden outputs are identical on the pinned and current file."
+      "reason": "712cca9 re-pinned by hand after 392ce09 (Kiro Agent) added account_number, statement_period_start and statement_period_end to the RiskReport constructor, after risk, confidence and routing are computed. Node 4 scoring and routing do not read them; checklist.py and cashflow.py do (analyst-facing). Node 4 golden outputs are identical on the pinned and current file (checked later, in b60331e)."
     }
   ],
   "sha256": {
