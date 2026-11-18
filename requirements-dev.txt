@@ -1,0 +1,4 @@
+# Test-only dependencies (CI and local test runs). Not needed by the live app.
+-r requirements.txt
+pytest==9.2.0
+hypothesis==6.170.15
