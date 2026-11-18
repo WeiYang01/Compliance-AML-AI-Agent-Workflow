@@ -5,7 +5,7 @@ name: ml-retraining tests
 #                  constants, Node 4 golden outputs, re-pin log, git-clean and hygiene checks. Make this one a
 #                  required status check: it is what stops a commit from
 #                  silently changing Nodes 1-4, registry.py or reference_data.py.
-#   full           every test under tests/ml_retraining (slow).
+#   full           every test under tests/ml_retraining (~34 min on ubuntu-latest).
 #
 # Tests that need the real Real_Style / Forgery files skip themselves when
 # RETRAIN_REAL_STYLE_DIR / RETRAIN_FORGERY_DIR are unset, as they are here.
@@ -48,7 +48,9 @@ jobs:
 
   full:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Measured 2026-11-18 on ubuntu-latest: 1118 passed, 3 skipped in 33m41s
+    # (tests) + ~30s setup. About 2x that, so a hang fails in reasonable time.
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
