@@ -2,7 +2,7 @@ name: ml-retraining tests
 
 # Two jobs:
 #   pinned-guards  fast (~30s of tests): protected-file hashes, Node 4 pinned
-#                  constants, Node 4 golden outputs, git-clean and hygiene checks. Make this one a
+#                  constants, Node 4 golden outputs, re-pin log, git-clean and hygiene checks. Make this one a
 #                  required status check: it is what stops a commit from
 #                  silently changing Nodes 1-4, registry.py or reference_data.py.
 #   full           every test under tests/ml_retraining (slow).
@@ -38,12 +38,13 @@ jobs:
             requirements.txt
             requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - name: Pinned hashes, Node 4 constants and golden outputs, hygiene
+      - name: Pinned hashes and re-pin log, Node 4 constants and golden outputs, hygiene
         run: >
           python -m pytest -q -rfEs
           tests/ml_retraining/test_scaffold.py
           tests/ml_retraining/test_hygiene.py
           tests/ml_retraining/test_node4_golden.py
+          tests/ml_retraining/test_repin.py
 
   full:
     runs-on: ubuntu-latest
