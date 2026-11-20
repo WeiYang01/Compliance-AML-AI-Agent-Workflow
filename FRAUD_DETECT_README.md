@@ -1140,6 +1140,37 @@ Node 6b: under the default Switch_Rule (`real_style_role = required`, only two R
 
 Node 4: its weights and thresholds are not changed by Stage B.
 
+### Guards on Nodes 1 to 4
+
+Four tests in `tests/ml_retraining/` stop Nodes 1 to 4, `registry.py` and `reference_data.py` from changing silently:
+
+| Test | What it pins | What it misses on its own |
+|---|---|---|
+| `test_hygiene.py::test_protected_file_hash`, `test_scaffold.py::test_protected_hashes_match_sources` | SHA-256 of each protected file, from `protected_hashes.json` | Nothing changes unnoticed, but it also fails on display-only edits, so a failure does not say whether scoring changed |
+| `test_hygiene.py::test_node4_constants_and_literals_equal_pinned` | `AUTO_CLEAR_MAX_RISK`, `MIN_CONFIDENCE_FOR_AUTO` and the numeric literals of each Node 4 scoring function | A logic change that keeps the same numbers (a flipped `<` / `<=`, a dropped branch, `round` replaced by `int`) |
+| `test_node4_golden.py` | Exact risk, confidence, both bands, routing, routing reason and summary of `synthesize()` on 19 hand-built inputs, one per branch or boundary, plus every band edge | Behaviour on inputs between the cases it covers |
+| `test_repin.py` | Every entry of the hash map has a `repin_log` chain from its baseline to the current pin | A forged log entry; that is for code review |
+
+If `test_node4_golden.py` fails, Node 4 scoring or routing changed. Review the change; update `EXPECTED` in that test only in the same commit as a deliberate Node 4 change, and say why in the commit message.
+
+To re-pin a protected file after a reviewed change, use the script, never a hand edit:
+
+```bash
+python scripts/repin_protected_hashes.py                     # status: lists stale files
+python scripts/repin_protected_hashes.py --file fraud_detect/nodes/risk_synthesis.py \
+    --reason "what changed and why it does not alter scoring" --dry-run
+```
+
+It re-pins only the files named with `--file`, refuses a missing or one-line reason, prints the diff from the pinned version, refuses `risk_synthesis.py` while the golden or pinned-constants test fails, and records the reason in `repin_log`. Commit `protected_hashes.json` with the change it pins.
+
+CI (`.github/workflows/ml-retraining-tests.yml`) runs these four files as the fast `pinned-guards` job and all of `tests/ml_retraining` as the `full` job. To run the guards locally (about 30 s):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q tests/ml_retraining/test_scaffold.py tests/ml_retraining/test_hygiene.py \
+    tests/ml_retraining/test_node4_golden.py tests/ml_retraining/test_repin.py
+```
+
 ### Labels and open decisions
 
 Each Candidate bundle stores the label "model trained on synthetic data". The label is stored in the bundle and is not yet shown in the demo (decision 9). The other open decisions were settled as follows: `real_style_role` defaults to `required` (`veto_only` is accepted), and the Current models are always backed up before `switch`, so `restore` can undo it. Results on synthetic data are never presented as real-world accuracy.

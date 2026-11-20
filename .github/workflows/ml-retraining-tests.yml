@@ -1,0 +1,65 @@
+name: ml-retraining tests
+
+# Two jobs:
+#   pinned-guards  fast (~30s of tests): protected-file hashes, Node 4 pinned
+#                  constants, Node 4 golden outputs, re-pin log, git-clean and hygiene checks. Make this one a
+#                  required status check: it is what stops a commit from
+#                  silently changing Nodes 1-4, registry.py or reference_data.py.
+#   full           every test under tests/ml_retraining (~34 min on ubuntu-latest).
+#
+# Tests that need the real Real_Style / Forgery files skip themselves when
+# RETRAIN_REAL_STYLE_DIR / RETRAIN_FORGERY_DIR are unset, as they are here.
+# torch is not installed (requirements-gnn.txt is training-only).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Pinned hashes and re-pin log, Node 4 constants and golden outputs, hygiene
+        run: >
+          python -m pytest -q -rfEs
+          tests/ml_retraining/test_scaffold.py
+          tests/ml_retraining/test_hygiene.py
+          tests/ml_retraining/test_node4_golden.py
+          tests/ml_retraining/test_repin.py
+
+  full:
+    runs-on: ubuntu-latest
+    # Measured 2026-11-18 on ubuntu-latest: 1118 passed, 3 skipped in 33m41s
+    # (tests) + ~30s setup. About 2x that, so a hang fails in reasonable time.
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: All ml_retraining tests
+        run: python -m pytest -q -rfEs --durations=25 tests/ml_retraining
