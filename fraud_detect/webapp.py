@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .ml.gnn import gnn_lookup
-from .nodes import ml_statement, ml_transaction
 from .nodes.checklist import CHECKLIST_SIDE_NOTE, build_checklist, stage_confidence_map
 from .models import ReviewDecision, display_company_name
 from .registry import live_lookup_lifespan
@@ -47,12 +46,6 @@ store = CaseStore(str(BASE.parent / "data" / "cases.json"))
 # is safe in the live app and avoids re-reading the joblib file on every request.
 GNN_SCORES = gnn_lookup.load_scores()
 
-# Load the trained ML models once at startup, mirroring the GNN_SCORES pattern.
-# Both loaders are fail-safe (return None if the .joblib file is absent), so the
-# optional ML nodes (6a/6b) simply stay dormant when a model is missing.
-# Off by default: see ml_transaction.ENABLE_ENV. GNN_SCORES above still feed Node 6a.
-TXN_MODEL = ml_transaction.load_live_model()
-STATEMENT_MODEL = ml_statement.load_model()
 
 _BAND_COLOR = {
     "LOW": "#2e7d32", "MEDIUM": "#f9a825",
