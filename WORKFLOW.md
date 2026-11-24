@@ -83,6 +83,18 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   - mixed date formats or currency symbols in one statement (rows spliced in),
   - image-editing software (Photoshop, GIMP) showing up in the file metadata,
   - a file creation date *before* the period it claims to cover (impossible for a genuine file).
+- Also looks at **how the file was built** (`structure_forensics.py`), which most editing
+  leaves behind even when the page looks perfect:
+  - **text drawn over text** (`VF_TEXT_OVER_TEXT`, HIGH): two different characters printed
+    in the same place. A pasted value usually leaves the old one underneath; the finding
+    names the added value and the likely original under it,
+  - **text hidden under a white box** added on top of the page (`VF_TEXT_COVERED`, MEDIUM),
+  - **changes appended after the file was finished** (`VF_INCREMENTAL_EDIT`, MEDIUM), the way
+    editors such as Acrobat save edits. Digitally signed files are exempt: signing appends
+    a revision by design.
+  - An added layer on its own (a stamp, a page number) is not reported, only one that sits
+    on top of existing text. `python -m fraud_detect.nodes.structure_eval` measures the
+    checks on the synthetic corpus.
 
 ### Node 3 — Financial Logic (the accountant)
 - Checks whether the numbers behave:
