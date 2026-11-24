@@ -26,6 +26,7 @@ from typing import Optional
 
 from .models import AgentReport, RiskReport
 from .nodes import (
+    extraction_check,
     financial_logic,
     ingestion,
     memory,
@@ -69,6 +70,14 @@ def run_pipeline(
     """
     # Node 1 — ingestion: extract the (untrusted) document text, metadata, etc.
     ing = ingestion.ingest(pdf_path)
+
+    # Node 1 validation layer: confirm the values were READ correctly (a second,
+    # independent reader; every parsed value must appear in the text; metadata
+    # actually read). It never changes a value and never judges the document;
+    # its findings join Node 1's data-quality findings, which Node 4 treats as
+    # reduced certainty.
+    check, check_findings = extraction_check.validate(ing)
+    ing.data_quality_findings.extend(check_findings)
 
     # Security layer — scan the extracted text for embedded instructions and
     # record their location + extracted text as evidence. The text is never
@@ -121,6 +130,7 @@ def run_pipeline(
     report.transaction_fingerprints = memory.build_fingerprints(
         ing, detection_findings
     )
+    report.extraction_check = check
 
     return report
 

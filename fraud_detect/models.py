@@ -188,6 +188,36 @@ class IngestionResult(BaseModel):
     data_quality_findings: list[Finding] = Field(default_factory=list)
 
 
+class FieldCheck(BaseModel):
+    """How far Node 1's reading of one field could be confirmed.
+
+    ``status`` is one of:
+        * ``verified``          -- the value appears in the document text
+        * ``not_found_in_text`` -- the value was parsed but does not appear in the text
+        * ``missing``           -- Node 1 found no value (already a DQ_MISSING_* finding)
+    """
+    name: str
+    value: Optional[str] = None
+    status: str
+
+
+class ExtractionCheck(BaseModel):
+    """Result of the Node 1 validation layer: did we READ the document correctly?
+
+    It never judges whether the document is genuine (Nodes 2 and 3 do that) and
+    never changes a parsed value; it only reports how far each value could be
+    confirmed.
+    """
+    fields: list[FieldCheck] = Field(default_factory=list)
+    rows_checked: int = 0
+    rows_not_found: int = 0
+    pages_compared: int = 0
+    pages_disagreeing: list[int] = Field(default_factory=list)
+    second_reader_available: bool = False
+    metadata_entries_in_file: int = 0
+    metadata_fields_read: int = 0
+
+
 # --------------------------------------------------------------------------- #
 # Node 2 / Node 3 — agent outputs
 # --------------------------------------------------------------------------- #
@@ -264,6 +294,10 @@ class RiskReport(BaseModel):
     # Cross-case memory: fingerprints of this case's transactions, persisted so
     # that future screenings can detect recurrence of the same entity/amount.
     transaction_fingerprints: list[TxnFingerprint] = Field(default_factory=list)
+
+    # Node 1 validation layer: how far each extracted value could be confirmed.
+    # Optional so older stored reports still validate.
+    extraction_check: Optional[ExtractionCheck] = None
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
