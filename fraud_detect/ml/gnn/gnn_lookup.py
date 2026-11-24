@@ -24,19 +24,22 @@ The store format (produced by Task 5)::
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 # The live path depends ONLY on joblib (already a core dependency). No torch.
 import joblib
 
+from ...paths import MODELS_DIR
+
 # The serialized store is a plain dict; typing it as such keeps the live path
 # free of any GNN/torch types.
 GnnScores = Dict[str, Any]
 
-DEFAULT_SCORES_PATH = "models/gnn_scores.joblib"
+DEFAULT_SCORES_PATH = MODELS_DIR / "gnn_scores.joblib"
 
 
-def load_scores(path: str = DEFAULT_SCORES_PATH) -> Optional[GnnScores]:
+def load_scores(path: str | Path = DEFAULT_SCORES_PATH) -> Optional[GnnScores]:
     """Load the precomputed GNN scores store, or ``None`` on any failure.
 
     A well-formed store is a ``dict`` carrying ``account_scores``, ``edge_scores``
