@@ -1174,3 +1174,30 @@ python -m pytest -q tests/ml_retraining/test_scaffold.py tests/ml_retraining/tes
 ### Labels and open decisions
 
 Each Candidate bundle stores the label "model trained on synthetic data". The label is stored in the bundle and is not yet shown in the demo (decision 9). The other open decisions were settled as follows: `real_style_role` defaults to `required` (`veto_only` is accepted), and the Current models are always backed up before `switch`, so `restore` can undo it. Results on synthetic data are never presented as real-world accuracy.
+
+## Step 3: can Nodes 6a / 6b catch what the rules miss? (residual experiment)
+
+**Purpose.** An ML node only earns its place if it catches tampering the rule-based checks miss, without adding false alarms. `python -m fraud_detect.ml.residual_eval` measures exactly that. It is a fast, read-only experiment (about 10 minutes, nothing written to the repo, no model file saved), not the governed Stage B pipeline; results that justify it move there later.
+
+**What it adds.**
+- `careful_edit` (an opt-in Extra_Tamper_Type, so default corpora are unchanged): money moved between two receipts of one month, rewritten in place in the page's own text, with totals and closing balance unchanged. It leaves nothing for Node 2's checks, the structural checks or Node 3. Variants: *anchored* (original start position kept) and *retypeset* (right edge kept, characters re-spaced unevenly).
+- `fraud_detect/ml/statement_geometry.py`: typography features for Node 6b (spacing inside a number compared with the document's own spacing; money values out of line with their column).
+- `fraud_detect/ml/statement_behaviour.py`: statement-level behaviour features for Node 6a (monthly receipt shape, receipts vs spending, repeats, Benford deviation, round amounts, payer concentration).
+
+**Protocol.** Disjoint train / validation / test seeds; layout `two_col_ddmmyy_cr` held out entirely. Each layout and seed contributes a genuine statement, a genuine hard negative (re-saved, or typeset with uneven spacing throughout), a `careful_edit`, a catalogue tamper and a content/behaviour tamper. The *residual* is the tampered documents the rules miss. Thresholds are set for 5% false alarms on validation genuines. A leak check lists any single feature with validation AUC of 0.98 or more.
+
+**Results** (1,300 documents; synthetic data, not real-world accuracy; no leak suspects):
+
+| | Rules only | + 6b current | + 6b typography only | + 6a behaviour |
+|---|---|---|---|---|
+| Caught, held-out seeds | 76/150 | 81/150 | 105/150 | 84/150 |
+| False alarms, held-out seeds | 3/100 | +7 | +8 | +4 |
+| Caught, held-out layout | 17/30 | 19/30 | 27/30 | 18/30 |
+| False alarms, held-out layout | 0/20 | +4 | +9 | +0 |
+| `careful_edit` retypeset caught (both test sets) | 0/29 | 4/29 | 29/29 | 1/29 |
+| `careful_edit` anchored caught | 0/31 | 3/31 | 5/31 | 0/31 |
+
+**Verdict.**
+- **6b: the evidence is real, but a model is the wrong tool for it here.** A plain rule (any number spaced differently from the rest of its document, or a money value off its column) catches 25 of 29 retypeset edits with **0 false alarms on 120 genuine statements**, including statements typeset unevenly throughout. The typography-only model catches 29 of 29 but flags about 21% of genuine statements, and its threshold does not transfer to the held-out layout. Synthetic genuine statements have no natural typographic variation, so there is nothing for a model to learn beyond the threshold a rule already states. The next step is a Node 2 rule, with the model reconsidered only once real statements show variation a single threshold cannot handle.
+- **The anchored edit is the honest floor:** in this font all digits have the same width, so a same-length edit that keeps its start position leaves no typographic trace at all. Document forensics cannot see it; only content checks could.
+- **6a: weak but real.** AUC 0.71 to 0.75 with few false alarms; it catches 4 of 7 `turnover_inflation` and 2 of 2 `fabricated_receipts` that the rules miss, but adds only 8 detections on 180 tampered test statements. `cross_month_copy` (0/5) and `uen_mismatch` (0/6) stay missed: the copied invoice number is not printed on layouts that shorten descriptions, and the registry mismatch is invisible because the fictional companies are not in the registry. Worth carrying into Stage B; not yet worth switching on.
