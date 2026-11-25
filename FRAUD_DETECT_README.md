@@ -1171,6 +1171,17 @@ python -m pytest -q tests/ml_retraining/test_scaffold.py tests/ml_retraining/tes
     tests/ml_retraining/test_node4_golden.py tests/ml_retraining/test_repin.py
 ```
 
+### Node 6a statement feature set (opt-in)
+
+Node 6a's row model scores one transaction at a time, so it cannot see statement-level patterns such as inflated turnover. `python -m fraud_detect.ml.retraining init --node6a-feature-set statement` trains Node 6a on one row per statement instead, using `statement_behaviour.STAGE_B_FEATURES`: monthly receipt peak and spread, receipts against spending (overall and peak month), repeated exact amounts, Benford deviation of receipts, and the peak count of receipts per month. They need only dates and signed amounts, so the corpus's `rows.csv` and a parsed PDF give the live node and Stage B identical inputs. As for the rest of Stage B, the corpus it trains on is synthetic data, and nothing here is real-world accuracy.
+
+- **Audit.** The features are reviewed in `audit-v2` (audit-v1 unchanged, plus one entry per statement feature). Left out on purpose: payer features (`rows.csv` has no descriptions) and round amounts (listed above as a generator tell).
+- **Labels.** Genuine statements are 0; tampered statements with at least one fraud row are 1. Tampered statements whose transactions are untouched (document-only tampers) are left out and counted, as for the row model's cutoffs.
+- **Gates.** The statement features get their own Leak_Test (`leak-6a-statement.json`), which blocks training the same way the Node 6b Leak_Test does.
+- **Default unchanged.** The default stays `pdf`: a run configured without the option keeps its run id, its audit-v1 and its row model.
+- **Live node.** A switched statement bundle is read by `ml_transaction`, which scores the whole statement once and raises at most one `ML_TXN_STATEMENT_RISK` finding at the bundle's statement-level cutoffs.
+- **Status.** No full Stage B run has been made with this feature set yet. The fast residual experiment ("Step 3" below) is the only measurement so far, on synthetic data and not real-world accuracy: AUC 0.71 to 0.75 on held-out data with a feature set that still included round amounts.
+
 ### Labels and open decisions
 
 Each Candidate bundle stores the label "model trained on synthetic data". The label is stored in the bundle and is not yet shown in the demo (decision 9). The other open decisions were settled as follows: `real_style_role` defaults to `required` (`veto_only` is accepted), and the Current models are always backed up before `switch`, so `restore` can undo it. Results on synthetic data are never presented as real-world accuracy.
