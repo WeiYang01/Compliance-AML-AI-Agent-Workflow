@@ -34,6 +34,7 @@ from .nodes import (
     risk_synthesis,
     security,
     structure_forensics,
+    typography_forensics,
     visual_forensics,
 )
 from .store import CaseStore
@@ -82,6 +83,9 @@ def run_pipeline(
     # text hidden under a white box, changes appended after the file was finished).
     # Same agent as Node 2: one more view of the same document.
     visual_report.findings.extend(structure_forensics.analyze(ing.source_path))
+    # Node 2 typography checks: a value re-typed in place (spacing unlike the rest of the
+    # document, or a money value off its column). Same agent as Node 2.
+    visual_report.findings.extend(typography_forensics.analyze(ing.source_path))
     # Node 3 learns this company's normal transaction rhythm from its earlier,
     # human-approved statements when a store is available. Any trouble reading
     # the history falls back to learning from this statement alone, so screening

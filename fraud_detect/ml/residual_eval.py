@@ -14,8 +14,8 @@ Protocol
   genuine hard negative (re-saved by a print/export tool, or typeset with uneven spacing
   throughout), one ``careful_edit``, one catalogue tamper in rotation, and one content or
   behaviour tamper in rotation (Node 6a's targets, so the residual has enough of them).
-* **The residual.** For each document the rule-based checks run (Node 2 visual and
-  structural checks, Node 3). A tampered document is *missed* when they raise no
+* **The residual.** For each document the rule-based checks run (Node 2 visual,
+  structural and typography checks, Node 3). A tampered document is *missed* when they raise no
   MEDIUM-or-higher finding beyond the background codes that also fire on genuine
   training statements. The missed documents are the residual: the only place an ML node
   can add anything.
@@ -147,7 +147,8 @@ def _build(job: Job) -> Optional[tuple[bytes, str]]:
 def screen(job: Job) -> Optional[dict]:
     """Build one document and compute its rule findings and all three feature sets."""
     from fraud_detect.ml import statement_behaviour, statement_features, statement_geometry
-    from fraud_detect.nodes import financial_logic, structure_forensics, visual_forensics
+    from fraud_detect.nodes import (financial_logic, structure_forensics,
+                                    typography_forensics, visual_forensics)
     from fraud_detect.nodes.ingestion import ingest
 
     built = _build(job)
@@ -160,6 +161,7 @@ def screen(job: Job) -> Optional[dict]:
         ing = ingest(str(path))
         findings = (visual_forensics.analyze(ing).findings
                     + structure_forensics.analyze(str(path))
+                    + typography_forensics.analyze_bytes(pdf)
                     + financial_logic.analyze(ing).findings)
         current = statement_features.extract_features(str(path)) or {}
     return {

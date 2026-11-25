@@ -95,6 +95,16 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   - An added layer on its own (a stamp, a page number) is not reported, only one that sits
     on top of existing text. `python -m fraud_detect.nodes.structure_eval` measures the
     checks on the synthetic corpus.
+- And at **typography** (`typography_forensics.py`), the trace of a value re-typed in place in
+  a PDF editor, which leaves no overlay and no appended save:
+  - **a number spaced differently from the rest of its document** (`VF_SPACING_OUTLIER`,
+    MEDIUM). Measured against the document's own spacing, so a statement typeset unevenly
+    throughout is not flagged,
+  - **a money value just off its column** (`VF_COLUMN_MISALIGNED`, MEDIUM), within the
+    table's own rows only (summary boxes are aligned differently; dates are left-aligned).
+  - These began as Node 6b model features. On synthetic data the rule matched the model's
+    catch rate with no false alarms, where the model flagged about a fifth of genuine
+    statements, so they are used as a rule (see "Step 3" in `FRAUD_DETECT_README.md`).
 
 ### Node 3 — Financial Logic (the accountant)
 - Checks whether the numbers behave:
