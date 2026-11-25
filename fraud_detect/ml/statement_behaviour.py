@@ -110,3 +110,43 @@ def extract(transactions) -> Optional[dict[str, float]]:
                                   / total_credit if total_credit and len(months) > 1 else 0.0),
         "credits_per_month_peak_ratio": _ratio([float(month_count[m]) for m in months]),
     }
+
+
+# ---------------------------------------------------------------------------
+# The Stage B feature set for Node 6a
+# ---------------------------------------------------------------------------
+#: The statement features Stage B trains Node 6a on. They need only dates and signed
+#: amounts, which both the corpus's rows.csv and a parsed PDF carry, so training and the
+#: live node see the same inputs. Left out on purpose:
+#:   * the payer features (repeat_across_months_share, top_payer_share,
+#:     one_month_payer_share): rows.csv has no descriptions;
+#:   * round_amount_share: the Feature_Audit lists round amounts as a generator tell
+#:     (generated amounts carry cents, so round ones mark inserted rows).
+STAGE_B_FEATURES = [
+    "month_credit_peak_ratio",
+    "month_credit_spread",
+    "credit_debit_ratio",
+    "month_credit_debit_peak",
+    "repeat_amount_share",
+    "benford_deviation",
+    "credits_per_month_peak_ratio",
+]
+#: Value for a feature that cannot be computed (no debits, fewer than 20 receipts for
+#: Benford, one month only). Every real value is non-negative, so the model can tell it apart.
+NOT_COMPUTABLE = -1.0
+
+
+def stage_b_features(records) -> Optional[dict[str, float]]:
+    """The Stage B features from ``(date, signed amount)`` pairs, or ``None`` if too few.
+
+    Used both by the retraining pipeline (rows.csv) and by the live node (parsed
+    transactions), so the two always compute the same values.
+    """
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(date=d, amount=float(a), description=None)
+            for d, a in records if d is not None and a is not None]
+    full = extract(rows)
+    if full is None:
+        return None
+    return {k: (NOT_COMPUTABLE if math.isnan(full[k]) else float(full[k])) for k in STAGE_B_FEATURES}

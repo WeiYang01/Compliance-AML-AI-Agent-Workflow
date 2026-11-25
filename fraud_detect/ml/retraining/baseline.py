@@ -126,8 +126,11 @@ def score_a(handle, rows, *, dataset) -> BaselineScores:
 
 
 def deployed_cutoffs(handle) -> tuple[float, float]:
-    """(medium, high) the live node runs with; Node 6a ignores any stored thresholds (F9)."""
-    if handle.node == "6b" and isinstance(handle.bundle, dict):
+    """(medium, high) the live node runs with. A Node 6a row model ignores any stored
+    thresholds (F9); a statement model uses its stored statement-level cutoffs."""
+    statement = (handle.node == "6a" and isinstance(handle.bundle, dict)
+                 and handle.bundle.get("feature_set") == "statement")
+    if (handle.node == "6b" or statement) and isinstance(handle.bundle, dict):
         t = handle.bundle.get("thresholds") or {}
         return (float(t.get("medium", _DEFAULT_CUTOFFS[0])),
                 float(t.get("high", _DEFAULT_CUTOFFS[1])))

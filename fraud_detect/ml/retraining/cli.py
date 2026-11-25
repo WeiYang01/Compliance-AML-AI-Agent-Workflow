@@ -117,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--held-out-layout", default=None)
     p.add_argument("--real-style-role", choices=("required", "veto_only"), default="required")
     p.add_argument("--rule-c-scope", choices=("all", "genuine_only"), default="all")
+    p.add_argument("--node6a-feature-set", choices=("pdf", "statement"), default="pdf",
+                   help="Node 6a feature set: pdf (row model) or statement (one row per statement)")
     p.add_argument("--target-fa-medium", type=float, default=None)
     p.add_argument("--target-fa-high", type=float, default=None)
     p.add_argument("--threshold", type=_threshold, action="append", default=[], metavar="NAME=VALUE")

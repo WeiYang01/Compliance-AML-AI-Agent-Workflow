@@ -135,7 +135,9 @@ def analyze(ing: IngestionResult, model=None, gnn_scores=None) -> AgentReport:
         return AgentReport(agent=AGENT, findings=findings)
 
     # --- Existing GBM path (unchanged) -------------------------------------- #
-    if model is not None:
+    if is_statement_model(model):
+        _append_statement_finding(ing, model, findings)
+    elif model is not None:
         _append_gbm_findings(ing, model, findings)
 
     # --- GNN graph-score path (independent evidence) ------------------------ #
@@ -176,6 +178,50 @@ def _append_gbm_findings(ing: IngestionResult, model, findings: list[Finding]) -
                       f"{prob:.0%} fraud likelihood by the AML classifier. "
                       f"Evidence for a reviewer; never an automatic rejection."),
         ))
+
+
+def is_statement_model(model) -> bool:
+    """True for a Stage B statement-level bundle (``feature_set == "statement"``)."""
+    return isinstance(model, dict) and model.get("feature_set") == "statement"
+
+
+def _append_statement_finding(ing: IngestionResult, model: dict, findings: list[Finding]) -> None:
+    """Score the whole statement once and append at most one ML_TXN_STATEMENT_RISK finding.
+
+    A statement-level model (Stage B, ``feature_set == "statement"``) reads the shape of
+    the statement: monthly receipts, receipts against spending, repeated amounts. Its
+    stored cutoffs were chosen on statement scores, so they are used directly. Fail-safe:
+    too few transactions, a malformed bundle or any scoring error gives no finding.
+    """
+    from fraud_detect.ml.statement_behaviour import stage_b_features
+
+    try:
+        features = stage_b_features((t.date, t.amount) for t in ing.transactions)
+        if features is None:
+            return
+        columns = list(model["feature_columns"])
+        prob = float(model["pipeline"].predict_proba([[features[c] for c in columns]])[0, 1])
+        medium = float(model["thresholds"]["medium"])
+        high = float(model["thresholds"]["high"])
+    except Exception:
+        return
+    if prob >= high:
+        sev, weight = Severity.HIGH, 22
+    elif prob >= medium:
+        sev, weight = Severity.MEDIUM, 12
+    else:
+        return
+    shape = ", ".join(f"{c} {features[c]:.2f}" for c in columns[:3])
+    findings.append(Finding(
+        agent=AGENT, code="ML_TXN_STATEMENT_RISK",
+        title="Model flags the statement's overall pattern of transactions",
+        severity=sev, weight=weight, field="statement",
+        evidence=(f"The statement-level model scored the whole statement {prob:.0%} "
+                  f"(cutoffs {medium:.2f} / {high:.2f}). It reads the shape of the statement "
+                  f"rather than single rows ({shape}). Inflated or copied receipts change that "
+                  f"shape. Evidence for a reviewer; never an automatic rejection. "
+                  f"{model.get('model_label', '')}".strip()),
+    ))
 
 
 def _append_gnn_finding(ing: IngestionResult, gnn_scores, findings: list[Finding]) -> None:
