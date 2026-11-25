@@ -89,11 +89,11 @@ TAMPER_TYPES: tuple[str, ...] = (
 
 STYLE_VERSIONS: tuple[int, ...] = (1, 2)
 
-EXTRA_TAMPER_TYPES: tuple[str, ...] = ("subtle_amount_edit",)
+EXTRA_TAMPER_TYPES: tuple[str, ...] = ("subtle_amount_edit", "careful_edit")
 
 ALL_TAMPER_TYPES: tuple[str, ...] = TAMPER_TYPES + EXTRA_TAMPER_TYPES
 
-TAMPER_METHODS: tuple[str, ...] = ("overlay", "rerender", "content", "file")
+TAMPER_METHODS: tuple[str, ...] = ("overlay", "rerender", "content", "file", "rewrite")
 
 SPLITS: tuple[str, ...] = ("train", "validation", "test", "test_unseen_layout")
 

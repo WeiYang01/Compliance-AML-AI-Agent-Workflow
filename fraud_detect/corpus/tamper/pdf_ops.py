@@ -134,10 +134,14 @@ def apply_file_ops(pdf: bytes, file_ops, row_map: RowMap, seed: int) -> bytes:
     overlays = [o for o in ops if o.op in ("overlay", "set_font")]
     if overlays:
         pdf = _apply_overlays(pdf, overlays, row_map)
+    rewrites = [o for o in ops if o.op == "rewrite"]
+    if rewrites:
+        from fraud_detect.corpus.tamper.careful import apply_rewrites  # avoids an import cycle
+        pdf = apply_rewrites(pdf, rewrites, row_map)
     for op in ops:
         if op.op in ("set_metadata", "resave"):
             pdf = _apply_metadata(pdf, op)
-        elif op.op not in ("overlay", "set_font"):
+        elif op.op not in ("overlay", "set_font", "rewrite"):
             raise ValueError(f"unknown file op {op.op!r}")
     return pdf
 

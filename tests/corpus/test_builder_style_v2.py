@@ -13,7 +13,6 @@ from fraud_detect.corpus.build import main
 from fraud_detect.corpus.builder import CorpusBuilder
 from fraud_detect.corpus.schema import (
     ALL_TAMPER_TYPES,
-    EXTRA_TAMPER_TYPES,
     TAMPER_TYPES,
     BuildConfig,
 )
@@ -115,7 +114,8 @@ def test_counts_with_extra_type_lists_it_for_each_split(tmp_path):
     counts = b._counts(manifests)
     for split in counts["per_tamper_type"].values():
         assert split["subtle_amount_edit"] == 0
-        assert tuple(split) == TAMPER_TYPES + EXTRA_TAMPER_TYPES
+        # Only the extras named in the mix are listed (careful_edit is not in this mix).
+        assert tuple(split) == TAMPER_TYPES + ("subtle_amount_edit",)
 
 
 def test_warnings_name_missing_extra_type(tmp_path):

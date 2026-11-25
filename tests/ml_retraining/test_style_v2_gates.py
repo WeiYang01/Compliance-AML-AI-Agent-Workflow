@@ -14,7 +14,7 @@ import dataclasses
 from collections import Counter
 
 from fraud_detect.corpus.builder import CorpusBuilder
-from fraud_detect.corpus.schema import ALL_TAMPER_TYPES, BuildConfig
+from fraud_detect.corpus.schema import BuildConfig
 from fraud_detect.corpus.styling import make_style_v2
 from fraud_detect.ml.retraining.corpus_gates import (
     capability_report,
@@ -94,8 +94,9 @@ def test_each_producer_family_at_least_4_percent_of_each_class():
 def _mix_26() -> tuple:
     """16 original types and subtle_amount_edit: genuine_resaved 10 parts, others 1 (26 parts).
     Built here because runner.design_tamper_mix changes only in task 9.1."""
-    mix = tuple((t, 10.0 if t == "genuine_resaved" else 1.0) for t in ALL_TAMPER_TYPES)
-    assert len(ALL_TAMPER_TYPES) == 17 and sum(w for _, w in mix) == 26.0
+    from fraud_detect.ml.retraining.runner import STAGE_B_TAMPER_TYPES
+    mix = tuple((t, 10.0 if t == "genuine_resaved" else 1.0) for t in STAGE_B_TAMPER_TYPES)
+    assert len(STAGE_B_TAMPER_TYPES) == 17 and sum(w for _, w in mix) == 26.0
     return mix
 
 

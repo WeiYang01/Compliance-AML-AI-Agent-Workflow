@@ -31,6 +31,13 @@ N_LAYOUTS = 6
 MIX_PARTS = 26               # 16 original types + subtle_amount_edit (10 + 16 x 1)
 RESAVED_PER_26 = 10          # genuine_resaved share of the tampered mix: 10 of 26 parts
 TAMPER_TYPES_PER_26 = 1      # each of the other 16 types: 1 of 26 parts
+
+# The tamper types Stage B trains on, named explicitly rather than taken from ALL_TAMPER_TYPES:
+# a new Extra_Tamper_Type (e.g. careful_edit) must not silently change the training mix or the
+# 26-part design. Add one here on purpose, with the mix and its tests.
+from fraud_detect.corpus.schema import TAMPER_TYPES as _CORE_TAMPER_TYPES  # noqa: E402
+
+STAGE_B_TAMPER_TYPES: tuple = _CORE_TAMPER_TYPES + ("subtle_amount_edit",)
 INTEGRITY_GATE_IDS = frozenset({
     "corpus_seed", "company_split", "layout_separation", "held_out_seed", "uen_manifest",
     "awkward_overlap", "styling_balance", "resaved_share", "tamper_type_minimum",
@@ -220,13 +227,12 @@ def cmd_init(session: Session, args) -> int:
 def design_tamper_mix() -> tuple:
     """The design's tamper mix: genuine_resaved 10 parts, each of the other 16 types 1 part (of 26).
 
-    The 16 types are the original ones plus subtle_amount_edit (``ALL_TAMPER_TYPES``). Without the
+    The 16 types are the original ones plus subtle_amount_edit (``STAGE_B_TAMPER_TYPES``). Without the
     mix the generator deals the types equally (about 6% re-saved genuine documents), which fails the
     15% re-saved gate in every Split.
     """
-    from fraud_detect.corpus.schema import ALL_TAMPER_TYPES
     return tuple((t, float(RESAVED_PER_26) if t == "genuine_resaved" else float(TAMPER_TYPES_PER_26))
-                 for t in ALL_TAMPER_TYPES)
+                 for t in STAGE_B_TAMPER_TYPES)
 
 
 def plan_counts(per_genuine: int, per_tampered: int, n_seeds: int) -> dict:

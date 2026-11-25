@@ -17,7 +17,7 @@ from fraud_detect.corpus.schema import (
 
 def test_constants():
     assert STYLE_VERSIONS == (1, 2)
-    assert EXTRA_TAMPER_TYPES == ("subtle_amount_edit",)
+    assert EXTRA_TAMPER_TYPES == ("subtle_amount_edit", "careful_edit")
     assert ALL_TAMPER_TYPES == TAMPER_TYPES + EXTRA_TAMPER_TYPES
 
 
