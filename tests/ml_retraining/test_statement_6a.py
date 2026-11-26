@@ -69,6 +69,22 @@ def test_default_feature_set_keeps_the_run_id():
     assert statement.run_id != default.run_id
 
 
+def test_new_runs_default_to_the_statement_feature_set():
+    from fraud_detect.ml.retraining.cli import build_parser
+    assert build_parser().parse_args(["init"]).node6a_feature_set == "statement"
+    assert build_parser().parse_args(["init", "--node6a-feature-set", "pdf"]).node6a_feature_set == "pdf"
+
+
+def test_a_run_json_without_the_field_stays_a_pdf_run():
+    from fraud_detect.ml.retraining.runner import config_from_json
+    old = CliRunConfig()                                   # as written before the option existed
+    assert "node6a_feature_set" not in old.canonical_json()
+    loaded = config_from_json(old.canonical_json())
+    assert loaded.node6a_feature_set == "pdf" and loaded.run_id == old.run_id
+    new = config_from_json(CliRunConfig(node6a_feature_set="statement").canonical_json())
+    assert new.node6a_feature_set == "statement"
+
+
 # ---- table and training ------------------------------------------------------------------------
 
 class _Doc:

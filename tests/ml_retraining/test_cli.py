@@ -193,6 +193,9 @@ class Env:
             args += ["--threshold", f"{key}={value}"]
         if plumbing:
             args.append("--plumbing")
+        # These runs test the row model; new runs default to the statement feature set, so
+        # pin pdf here. A later --node6a-feature-set in ``extra`` overrides it.
+        args += ["--node6a-feature-set", "pdf"]
         res = self.invoke(*args, *extra)
         m = re.search(r"^run_id: (\w+)$", res.out, re.M)
         if m:

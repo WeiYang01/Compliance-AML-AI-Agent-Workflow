@@ -146,6 +146,11 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   KYC) or mistakes ordinary business-sized amounts for fraud. Set
   `FRAUD_ENABLE_TXN_MODEL=1` to switch it back on, e.g. after retraining on
   representative statements.
+- **Retraining defaults to the statement-level model.** Stage B now trains 6a on one
+  row per statement (whole-statement patterns such as inflated turnover) unless the
+  row model is asked for; on synthetic data it held its cutoffs on new data and
+  caught more at strict cutoffs. A switched-in statement model raises at most one
+  finding per statement.
 - **The GNN lookup stays on:** its precomputed scores are loaded at startup (in
   `webapp.py` / `demo.py`) and checked on every screening.
 - Adds a graph-based signal (GNN) that catches relational money-laundering patterns a

@@ -1171,14 +1171,14 @@ python -m pytest -q tests/ml_retraining/test_scaffold.py tests/ml_retraining/tes
     tests/ml_retraining/test_node4_golden.py tests/ml_retraining/test_repin.py
 ```
 
-### Node 6a statement feature set (opt-in)
+### Node 6a statement feature set (default for new runs)
 
-Node 6a's row model scores one transaction at a time, so it cannot see statement-level patterns such as inflated turnover. `python -m fraud_detect.ml.retraining init --node6a-feature-set statement` trains Node 6a on one row per statement instead, using `statement_behaviour.STAGE_B_FEATURES`: monthly receipt peak and spread, receipts against spending (overall and peak month), repeated exact amounts, Benford deviation of receipts, and the peak count of receipts per month. They need only dates and signed amounts, so the corpus's `rows.csv` and a parsed PDF give the live node and Stage B identical inputs. As for the rest of Stage B, the corpus it trains on is synthetic data, and nothing here is real-world accuracy.
+Node 6a's row model scores one transaction at a time, so it cannot see statement-level patterns such as inflated turnover. The statement feature set trains Node 6a on one row per statement instead (`init --node6a-feature-set statement`, the default for new runs), using `statement_behaviour.STAGE_B_FEATURES`: monthly receipt peak and spread, receipts against spending (overall and peak month), repeated exact amounts, Benford deviation of receipts, and the peak count of receipts per month. They need only dates and signed amounts, so the corpus's `rows.csv` and a parsed PDF give the live node and Stage B identical inputs. As for the rest of Stage B, the corpus it trains on is synthetic data, and nothing here is real-world accuracy.
 
 - **Audit.** The features are reviewed in `audit-v2` (audit-v1 unchanged, plus one entry per statement feature). Left out on purpose: payer features (`rows.csv` has no descriptions) and round amounts (listed above as a generator tell).
 - **Labels.** Genuine statements are 0; tampered statements with at least one fraud row are 1. Tampered statements whose transactions are untouched (document-only tampers) are left out and counted, as for the row model's cutoffs.
 - **Gates.** The statement features get their own Leak_Test (`leak-6a-statement.json`), which blocks training the same way the Node 6b Leak_Test does.
-- **Default unchanged.** The default stays `pdf`: a run configured without the option keeps its run id, its audit-v1 and its row model.
+- **Default.** `init` uses `statement` unless `--node6a-feature-set pdf` is given (owner decision after the comparison below: the statement model holds its cutoffs on new data and catches more at strict cutoffs; ranking is a tie). A new run records the feature set in `run.json`. A `run.json` without the field is a `pdf` run, so every run made before the option existed keeps its run id, its audit-v1 and its row model; a new `pdf` run also keeps the run id it had before.
 - **Live node.** A switched statement bundle is read by `ml_transaction`, which scores the whole statement once and raises at most one `ML_TXN_STATEMENT_RISK` finding at the bundle's statement-level cutoffs.
 - **Audit files.** `audit` writes both `audit/audit-v1.json` and `audit/audit-v2.json`, so the digest a statement bundle records can be traced to a file. In a statement run the comparison report's audit table also lists the statement features, with their Leak_Test AUCs on synthetic data.
 

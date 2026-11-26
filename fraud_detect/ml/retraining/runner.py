@@ -60,10 +60,13 @@ class CliRunConfig(RunConfig):
     plumbing: bool = False             # plumbing run: coverage gate reported, not enforced
     # Node 6a feature set: "pdf" (row model, the original) or "statement" (one row per
     # statement, fraud_detect.ml.statement_behaviour.STAGE_B_FEATURES, audited in audit-v2).
+    # "pdf" here is what a run.json WITHOUT the field means (every run made before the
+    # option existed). New runs default to "statement" on the command line (cli.py ``init``)
+    # and always record it, so an existing run is never re-read as a statement run.
     node6a_feature_set: str = "pdf"
 
     def canonical_json(self) -> str:
-        """As RunConfig, but the default Node 6a feature set is left out, so every run
+        """As RunConfig, but the "pdf" Node 6a feature set is left out, so every run
         configured before the option existed keeps its canonical JSON and run id."""
         from .config import _to_jsonable
         data = _to_jsonable(self)
