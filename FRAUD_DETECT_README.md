@@ -1103,7 +1103,7 @@ Run all commands from the repository root. Every command accepts `--help`.
 python -m fraud_detect.ml.retraining init      # write run.json: hashes, code fingerprint, Switch_Rule, cutoff rule
 python -m fraud_detect.ml.retraining build     # build the seed corpora and the held-out-seed corpus
 python -m fraud_detect.ml.retraining check     # integrity gates; "check --plan" prints document counts
-python -m fraud_detect.ml.retraining audit     # audit the Corpus, writes audit/audit-v1.json
+python -m fraud_detect.ml.retraining audit     # audit the Corpus, writes audit/audit-v1.json and audit-v2.json
 python -m fraud_detect.ml.retraining leak-test # Leak_Test on synthetic data
 python -m fraud_detect.ml.retraining decide    # record a decision: leak-feature, waive-gate, investigation, awkward-review
 python -m fraud_detect.ml.retraining train     # freeze cutoffs, fit Candidate models (6b and 6a)
@@ -1171,6 +1171,80 @@ python -m pytest -q tests/ml_retraining/test_scaffold.py tests/ml_retraining/tes
     tests/ml_retraining/test_node4_golden.py tests/ml_retraining/test_repin.py
 ```
 
+### Node 6a statement feature set (default for new runs)
+
+Node 6a's row model scores one transaction at a time, so it cannot see statement-level patterns such as inflated turnover. The statement feature set trains Node 6a on one row per statement instead (`init --node6a-feature-set statement`, the default for new runs), using `statement_behaviour.STAGE_B_FEATURES`: monthly receipt peak and spread, receipts against spending (overall and peak month), repeated exact amounts, Benford deviation of receipts, and the peak count of receipts per month. They need only dates and signed amounts, so the corpus's `rows.csv` and a parsed PDF give the live node and Stage B identical inputs. As for the rest of Stage B, the corpus it trains on is synthetic data, and nothing here is real-world accuracy.
+
+- **Audit.** The features are reviewed in `audit-v2` (audit-v1 unchanged, plus one entry per statement feature). Left out on purpose: payer features (`rows.csv` has no descriptions) and round amounts (listed above as a generator tell).
+- **Labels.** Genuine statements are 0; tampered statements with at least one fraud row are 1. Tampered statements whose transactions are untouched (document-only tampers) are left out and counted, as for the row model's cutoffs.
+- **Gates.** The statement features get their own Leak_Test (`leak-6a-statement.json`), which blocks training the same way the Node 6b Leak_Test does.
+- **Default.** `init` uses `statement` unless `--node6a-feature-set pdf` is given (owner decision after the comparison below: the statement model holds its cutoffs on new data and catches more at strict cutoffs; ranking is a tie). A new run records the feature set in `run.json`. A `run.json` without the field is a `pdf` run, so every run made before the option existed keeps its run id, its audit-v1 and its row model; a new `pdf` run also keeps the run id it had before.
+- **Live node.** A switched statement bundle is read by `ml_transaction`, which scores the whole statement once and raises at most one `ML_TXN_STATEMENT_RISK` finding at the bundle's statement-level cutoffs.
+- **Audit files.** `audit` writes both `audit/audit-v1.json` and `audit/audit-v2.json`, so the digest a statement bundle records can be traced to a file. In a statement run the comparison report's audit table also lists the statement features, with their Leak_Test AUCs on synthetic data.
+
+#### Full run (synthetic data, not real-world accuracy)
+
+One full run per feature set on the same corpora: `build --per-layout-genuine 80 --per-layout-tampered 80`, i.e. 5 training seeds plus the held-out seed, 960 statements each, with `two_col_ddmmyy_cr` held out as the unseen layout.
+
+- **Gates and leak tests** (all on synthetic data). All 12 integrity gates passed. No Leak_Test suspect: the simple models reach validation AUC 0.64 on the 6b features and 0.67 on the statement features.
+- **Node 6b** fails its cutoff target (no high cutoff reaches a 1% false-alarm rate; the closest is 2.1%), so `train` stops before Node 6a; `train --node 6a` trains 6a alone. **Owner decision: Node 6b has no live model.** The target is not loosened; the Node 2 typography rule covers these signals (see "Step 3"), and the live app loads a 6b model only when `FRAUD_ENABLE_STATEMENT_MODEL=1` is set.
+- **Row model** fails the same target on seed 20260804, so it has no release candidate.
+- **Statement model** trains on every seed and is frozen. From `compare` (release candidate, medium cutoff):
+
+| Data (synthetic data) | ROC-AUC | PR-AUC | Catch rate | False-alarm rate |
+|---|---|---|---|---|
+| Test split | 0.69 | 0.58 | 34% | 4.8% |
+| Unseen layout | 0.70 | 0.60 | 36% | 5.0% |
+| Held-out seed | 0.68 | 0.57 | 37% | 6.5% |
+
+The result on this synthetic data is `keep`: there is no Current model to compare with, and with `real_style_role=required` no switch is possible.
+
+#### Row model against statement model, on the same documents
+
+`compare` cannot set the two side by side when the row model has no release. `python -m fraud_detect.ml.retraining.like_for_like_6a` does it offline: for each training seed it fits both models on the train split with the code `train` uses, fixes each model's cutoffs on validation at a 5% and a 1% false-alarm rate, and scores both on the same test, unseen-layout and held-out-seed statements. It releases nothing and records no decision. Means over the 5 seeds, on synthetic data, held-out seed (222 tampered and 665 genuine statements; "core" as in the labels above):
+
+| Metric (synthetic data) | Row model | Statement model | Statement higher |
+|---|---|---|---|
+| ROC-AUC | 0.657 | 0.663 | 3 / 5 seeds |
+| PR-AUC | 0.502 | 0.553 | 4 / 5 |
+| Catch at the 5% cutoff | 30.5% | 33.9% | 4 / 5 |
+| False alarms at the 5% cutoff | 7.8% | 5.3% | lower in 4 / 5 |
+| Catch at the 1% cutoff | 20.8% | 28.8% | 4 / 5 |
+
+- **Ranking is a tie.** The ROC-AUC difference is +0.006, and on every seed the 95% interval of a paired bootstrap (about ±0.05 wide) includes zero. Neither feature set ranks statements better overall.
+- **The statement model is better where it is used: at strict cutoffs.** It catches about 8 points more at the 1% cutoff, and its cutoffs carry over to new data (5.3% false alarms against a 5% target, against 7.8% and up to 12% for the row model). That drift is why the row model fails the cutoff target.
+- **They catch different fraud.** At the 5% cutoffs the statement model catches `turnover_inflation` (58% against 19%), `fabricated_receipts` (35% against 9%) and `dormant_reactivation` (90% against 32%); the row model catches `cross_month_copy` (17% against 3%) and `rapid_pass_through` (76% against 62%). Flagging when either model fires catches about 40% of tampered statements, but at about 12.5% false alarms.
+- **Neither sees document edits.** `edited_amount`, `subtle_amount_edit`, `altered_date` and `font_mismatch` stay at or below 10% for both: those are for Nodes 2 and 3.
+- **Limits.** Synthetic data only. Two tamper types (`sudden_large_deposit`, `shell_counterparty`) are caught almost always by both and lift every number. This is not a residual measurement: Step 3 below measures what the models add beyond the rules.
+
 ### Labels and open decisions
 
 Each Candidate bundle stores the label "model trained on synthetic data". The label is stored in the bundle and is not yet shown in the demo (decision 9). The other open decisions were settled as follows: `real_style_role` defaults to `required` (`veto_only` is accepted), and the Current models are always backed up before `switch`, so `restore` can undo it. Results on synthetic data are never presented as real-world accuracy.
+
+## Step 3: can Nodes 6a / 6b catch what the rules miss? (residual experiment)
+
+**Purpose.** An ML node only earns its place if it catches tampering the rule-based checks miss, without adding false alarms. `python -m fraud_detect.ml.residual_eval` measures exactly that. It is a fast, read-only experiment (about 10 minutes, nothing written to the repo, no model file saved), not the governed Stage B pipeline; results that justify it move there later.
+
+**What it adds.**
+- `careful_edit` (an opt-in Extra_Tamper_Type: the corpus builder uses it only when a mix names it, and Stage B's training mix is now pinned to its 17 types in `runner.STAGE_B_TAMPER_TYPES`, so existing corpora and Stage B runs are unchanged): money moved between two receipts of one month, rewritten in place in the page's own text, with totals and closing balance unchanged. It leaves nothing for Node 2's checks, the structural checks or Node 3. Variants: *anchored* (original start position kept) and *retypeset* (right edge kept, characters re-spaced unevenly).
+- `fraud_detect/ml/statement_geometry.py`: typography features for Node 6b (spacing inside a number compared with the document's own spacing; money values out of line with their column).
+- `fraud_detect/ml/statement_behaviour.py`: statement-level behaviour features for Node 6a (monthly receipt shape, receipts vs spending, repeats, Benford deviation, round amounts, payer concentration). Caveat found afterwards: the Stage B Feature_Audit already lists round amounts as a generator tell (generated amounts carry cents), so `round_amount_share` may flatter 6a here; the Stage B version leaves it out.
+
+**Protocol.** Disjoint train / validation / test seeds; layout `two_col_ddmmyy_cr` held out entirely. Each layout and seed contributes a genuine statement, a genuine hard negative (re-saved, or typeset with uneven spacing throughout), a `careful_edit`, a catalogue tamper and a content/behaviour tamper. The *residual* is the tampered documents the rules miss. Thresholds are set for 5% false alarms on validation genuines. A leak check lists any single feature with validation AUC of 0.98 or more.
+
+**Results** (1,300 documents; synthetic data, not real-world accuracy; no leak suspects):
+
+| | Rules only | + 6b current | + 6b typography only | + 6a behaviour |
+|---|---|---|---|---|
+| Caught, held-out seeds | 76/150 | 81/150 | 105/150 | 84/150 |
+| False alarms, held-out seeds | 3/100 | +7 | +8 | +4 |
+| Caught, held-out layout | 17/30 | 19/30 | 27/30 | 18/30 |
+| False alarms, held-out layout | 0/20 | +4 | +9 | +0 |
+| `careful_edit` retypeset caught (both test sets) | 0/29 | 4/29 | 29/29 | 1/29 |
+| `careful_edit` anchored caught | 0/31 | 3/31 | 5/31 | 0/31 |
+
+**Verdict.**
+- **6b: the evidence is real, but a model is the wrong tool for it here.** A plain rule (any number spaced differently from the rest of its document, or a money value off its column) catches 25 of 29 retypeset edits with **0 false alarms on 120 genuine statements**, including statements typeset unevenly throughout. The typography-only model catches 29 of 29 but flags about 21% of genuine statements, and its threshold does not transfer to the held-out layout. Synthetic genuine statements have no natural typographic variation, so there is nothing for a model to learn beyond the threshold a rule already states. **The evidence is therefore used as a Node 2 rule** (`fraud_detect/nodes/typography_forensics.py`: `VF_SPACING_OUTLIER` and `VF_COLUMN_MISALIGNED`, both MEDIUM), and the residual experiment now counts it among the rules. The model features share the rule's code and stay available for a model trained on real statements, where variation a single threshold cannot handle may exist.
+**With the rule counted among the rules** (re-run, same 1,300 documents): the rules alone catch **97/150** tampered statements on held-out seeds (76 before) and **22/30** on the held-out layout (17 before), with false alarms unchanged at 3/100 and 0/20 (all on re-saved genuine files, which the existing metadata check flags). Only 4 of 29 re-typeset edits now reach the residual; the models add at most 8 detections on top of the rules.
+- **The anchored edit is the honest floor:** in this font all digits have the same width, so a same-length edit that keeps its start position leaves no typographic trace at all. Document forensics cannot see it; only content checks could.
+- **6a: weak but real.** AUC 0.71 to 0.75 with few false alarms; it catches 4 of 7 `turnover_inflation` and 2 of 2 `fabricated_receipts` that the rules miss, but adds only 8 detections on 180 tampered test statements. `cross_month_copy` (0/5) and `uen_mismatch` (0/6) stay missed: the copied invoice number is not printed on layouts that shorten descriptions, and the registry mismatch is invisible because the fictional companies are not in the registry. Worth carrying into Stage B; not yet worth switching on.

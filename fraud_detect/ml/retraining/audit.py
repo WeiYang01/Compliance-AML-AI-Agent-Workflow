@@ -148,10 +148,61 @@ AUDIT_V1 = FeatureAudit(
 )
 
 
+
+def _s(name, measures, note):
+    return AuditEntry(name=name, section="model_feature", node="6a-statement", measures=measures,
+                      label_independent="no", real_file_could_differ="yes", decision="keep",
+                      note=note)
+
+
+#: audit-v2 = audit-v1 unchanged, plus the Node 6a statement feature set. A run uses it
+#: only when it trains Node 6a on statements (RunConfig.node6a_feature_set == "statement"),
+#: so runs on the row feature set keep audit-v1 and its digest.
+AUDIT_V2 = FeatureAudit(
+    version="audit-v2",
+    entries=AUDIT_V1.entries + (
+        # ---- Node 6a statement feature set (7); dates and signed amounts only
+        _s("month_credit_peak_ratio", "Busiest month's receipts over the median month",
+           "Inserted receipts raise it. Hard_Negative: seasonal businesses peak genuinely; the "
+           "simulator's growth_range and seasonality_strength set the genuine spread"),
+        _s("month_credit_spread", "Coefficient of variation of monthly receipts",
+           "Same caveat as month_credit_peak_ratio"),
+        _s("credit_debit_ratio", "Receipts over spending across the statement",
+           "-1 when there are no debits. Inserted receipts raise it without matching costs"),
+        _s("month_credit_debit_peak", "Highest month's receipts-to-spending over the median month",
+           "-1 with fewer than two months that have debits"),
+        _s("repeat_amount_share", "Receipts whose exact amount appears more than once",
+           "Copied receipts raise it. Hard_Negative: instalment-paying customers repeat genuinely"),
+        _s("benford_deviation", "First digits of receipts against Benford's law",
+           "-1 with fewer than 20 receipts. Watch: generated amounts follow the simulator's "
+           "distributions, not real ledgers, so a gap may reflect the generator; the Leak_Test checks it"),
+        _s("credits_per_month_peak_ratio", "Busiest month's count of receipts over the median month",
+           "Inserted receipts raise it; same seasonal caveat"),
+    ),
+)
+
 def _expected_names():
     from fraud_detect.ml.statement_features import FEATURE_NAMES
     from fraud_detect.ml.transaction_features import PDF_FEATURE_COLUMNS
     return list(FEATURE_NAMES), list(PDF_FEATURE_COLUMNS)
+
+
+#: Audit node name for the Node 6a statement feature set (one row per statement).
+STATEMENT_NODE = "6a-statement"
+
+
+def _statement_names():
+    from fraud_detect.ml.statement_behaviour import STAGE_B_FEATURES
+    return list(STAGE_B_FEATURES)
+
+
+def covers_statement(audit: "FeatureAudit") -> bool:
+    """True when the audit reviews the Node 6a statement feature set.
+
+    An audit covers that set completely or not at all: ``validate`` rejects a partial one.
+    audit-v1 predates it; audit-v2 covers it.
+    """
+    return any(e.node == STATEMENT_NODE for e in audit.entries if e.section == "model_feature")
 
 
 def validate(audit: FeatureAudit) -> None:
@@ -179,12 +230,15 @@ def validate(audit: FeatureAudit) -> None:
             raise AuditError(f"feature {e.name}: decision neutralise needs a recorded neutralised_form")
 
     names_6b, names_6a = _expected_names()
+    groups = [("6b", names_6b), ("6a", names_6a)]
+    if covers_statement(audit):
+        groups.append((STATEMENT_NODE, _statement_names()))
     have = {(e.node, e.name) for e in audit.entries if e.section == "model_feature"}
-    for node, names in (("6b", names_6b), ("6a", names_6a)):
+    for node, names in groups:
         for n in names:
             if (node, n) not in have:
                 raise AuditError(f"feature {n}: no model_feature audit entry for node {node}")
-    expected = {("6b", n) for n in names_6b} | {("6a", n) for n in names_6a}
+    expected = {(node, n) for node, names in groups for n in names}
     for node, n in sorted(have - expected):
         raise AuditError(f"feature {n}: audit entry for node {node} matches no model feature")
 
@@ -197,11 +251,11 @@ def validate(audit: FeatureAudit) -> None:
 
 
 def model_input_columns(audit: FeatureAudit, node: str) -> list[str]:
-    """Ordered model input names for ``node`` ("6a" or "6b"); dropped features excluded."""
-    if node not in ("6a", "6b"):
-        raise ValueError(f"node must be '6a' or '6b', got {node!r}")
+    """Ordered model input names for ``node`` ("6a", "6b" or "6a-statement"); dropped excluded."""
+    if node not in ("6a", "6b", STATEMENT_NODE):
+        raise ValueError(f"node must be '6a', '6b' or {STATEMENT_NODE!r}, got {node!r}")
     names_6b, names_6a = _expected_names()
-    order = names_6b if node == "6b" else names_6a
+    order = {"6b": names_6b, "6a": names_6a, STATEMENT_NODE: _statement_names()}[node]
     decisions = {e.name: e.decision for e in audit.entries
                  if e.section == "model_feature" and e.node == node}
     return [n for n in order if decisions.get(n, "drop") != "drop"]

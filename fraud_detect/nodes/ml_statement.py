@@ -25,6 +25,27 @@ _HIGH_PROB = 0.80
 _MEDIUM_PROB = 0.50
 
 
+# Owner decision after the full Stage B run (synthetic data): Node 6b has no live model.
+# Its candidate failed the 1% false-alarm cutoff target and scored close to chance, and
+# the Node 2 typography rule (VF_SPACING_OUTLIER / VF_COLUMN_MISALIGNED) covers the same
+# signals better. A model file in models/ is therefore not loaded unless this is set.
+ENABLE_ENV = "FRAUD_ENABLE_STATEMENT_MODEL"
+
+
+def load_live_model(path: str | Path = MODELS_DIR / "statement_forgery_clf.joblib", env=None):
+    """Model for live screening, or ``None`` while Node 6b has no live model.
+
+    Returns ``None`` unless ``FRAUD_ENABLE_STATEMENT_MODEL`` is set to a true value;
+    then behaves like :func:`load_model` (also ``None`` if the file is missing).
+    """
+    import os
+
+    env = os.environ if env is None else env
+    if str(env.get(ENABLE_ENV, "")).strip().lower() not in ("1", "true", "yes", "on"):
+        return None
+    return load_model(path)
+
+
 def load_model(path: str | Path = MODELS_DIR / "statement_forgery_clf.joblib"):
     try:
         import joblib

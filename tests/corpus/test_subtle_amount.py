@@ -36,7 +36,7 @@ def _renderer():
 def test_schema_constants():
     from fraud_detect.corpus.schema import ALL_TAMPER_TYPES, EXTRA_TAMPER_TYPES, TAMPER_TYPES
 
-    assert EXTRA_TAMPER_TYPES == (NAME,)
+    assert NAME in EXTRA_TAMPER_TYPES  # the exact list is pinned in test_style_schema
     assert ALL_TAMPER_TYPES == TAMPER_TYPES + EXTRA_TAMPER_TYPES
     assert len(TAMPER_TYPES) == 16 and NAME not in TAMPER_TYPES
 

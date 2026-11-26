@@ -46,3 +46,20 @@ def test_apply_passes_loaded_models_to_the_pipeline(monkeypatch, tmp_path):
     assert r.status_code == 303
     assert seen["statement_model"] is stmt_sentinel
     assert seen["txn_model"] is txn_sentinel
+
+
+def test_node6b_has_no_live_model_unless_enabled(tmp_path):
+    from fraud_detect.nodes import ml_statement
+    import joblib
+    path = tmp_path / "statement_forgery_clf.joblib"
+    joblib.dump({"stub": True}, path)
+    assert ml_statement.load_live_model(path, env={}) is None
+    assert ml_statement.load_live_model(path, env={ml_statement.ENABLE_ENV: "0"}) is None
+    assert ml_statement.load_live_model(path, env={ml_statement.ENABLE_ENV: "1"}) == {"stub": True}
+    assert ml_statement.load_live_model(tmp_path / "missing.joblib", env={ml_statement.ENABLE_ENV: "1"}) is None
+
+
+def test_customer_app_loads_node6b_through_the_switch():
+    import inspect
+    from fraud_detect import customer_app
+    assert "STATEMENT_MODEL = ml_statement.load_live_model()" in inspect.getsource(customer_app)

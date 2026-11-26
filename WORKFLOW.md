@@ -54,9 +54,9 @@ flowchart TD
 ```
 
 **Reading the diagram:** solid arrows are the always-on flow. Nodes 6a/6b are
-wired in (models loaded at startup) and run on every screening, except 6a's
-transaction scoring, which is off by default (`FRAUD_ENABLE_TXN_MODEL=1` turns it
-on). Both stay fail-safe, producing no findings if a model file is missing. The one dotted,
+wired in, but only part of them runs: 6a's GNN lookup runs on every screening; 6a's
+transaction scoring is off by default (`FRAUD_ENABLE_TXN_MODEL=1` turns it on); and
+6b has no live model (`FRAUD_ENABLE_STATEMENT_MODEL=1` loads one). Both stay fail-safe, producing no findings if a model file is missing. The one dotted,
 conditional step left is Node 5, which runs only when a case store is supplied.
 
 ## What each node does (in plain terms)
@@ -83,6 +83,28 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   - mixed date formats or currency symbols in one statement (rows spliced in),
   - image-editing software (Photoshop, GIMP) showing up in the file metadata,
   - a file creation date *before* the period it claims to cover (impossible for a genuine file).
+- Also looks at **how the file was built** (`structure_forensics.py`), which most editing
+  leaves behind even when the page looks perfect:
+  - **text drawn over text** (`VF_TEXT_OVER_TEXT`, HIGH): two different characters printed
+    in the same place. A pasted value usually leaves the old one underneath; the finding
+    names the added value and the likely original under it,
+  - **text hidden under a white box** added on top of the page (`VF_TEXT_COVERED`, MEDIUM),
+  - **changes appended after the file was finished** (`VF_INCREMENTAL_EDIT`, MEDIUM), the way
+    editors such as Acrobat save edits. Digitally signed files are exempt: signing appends
+    a revision by design.
+  - An added layer on its own (a stamp, a page number) is not reported, only one that sits
+    on top of existing text. `python -m fraud_detect.nodes.structure_eval` measures the
+    checks on the synthetic corpus.
+- And at **typography** (`typography_forensics.py`), the trace of a value re-typed in place in
+  a PDF editor, which leaves no overlay and no appended save:
+  - **a number spaced differently from the rest of its document** (`VF_SPACING_OUTLIER`,
+    MEDIUM). Measured against the document's own spacing, so a statement typeset unevenly
+    throughout is not flagged,
+  - **a money value just off its column** (`VF_COLUMN_MISALIGNED`, MEDIUM), within the
+    table's own rows only (summary boxes are aligned differently; dates are left-aligned).
+  - These began as Node 6b model features. On synthetic data the rule matched the model's
+    catch rate with no false alarms, where the model flagged about a fifth of genuine
+    statements, so they are used as a rule (see "Step 3" in `FRAUD_DETECT_README.md`).
 
 ### Node 3 — Financial Logic (the accountant)
 - Checks whether the numbers behave:
@@ -124,6 +146,11 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   KYC) or mistakes ordinary business-sized amounts for fraud. Set
   `FRAUD_ENABLE_TXN_MODEL=1` to switch it back on, e.g. after retraining on
   representative statements.
+- **Retraining defaults to the statement-level model.** Stage B now trains 6a on one
+  row per statement (whole-statement patterns such as inflated turnover) unless the
+  row model is asked for; on synthetic data it held its cutoffs on new data and
+  caught more at strict cutoffs. A switched-in statement model raises at most one
+  finding per statement.
 - **The GNN lookup stays on:** its precomputed scores are loaded at startup (in
   `webapp.py` / `demo.py`) and checked on every screening.
 - Adds a graph-based signal (GNN) that catches relational money-laundering patterns a
@@ -133,7 +160,16 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   findings (the node is skipped) rather than crashing the screening.
 - Adds evidence only; never auto-rejects.
 
-### Node 6b — ML Statement Forgery (machine-learning, active)
+### Node 6b — ML Statement Forgery (machine-learning, no live model)
+- **No live model (owner decision).** In the full Stage B run on synthetic data, the
+  6b candidate failed its cutoff target (no cutoff reaches a 1% false-alarm rate; the
+  best was 2.1%) and its validation curves were close to chance. The target was not
+  loosened. The Node 2 typography rule (`VF_SPACING_OUTLIER`, `VF_COLUMN_MISALIGNED`)
+  measures the same signals and beat a model on them in the step 3 experiment, so it
+  does the job instead. The live app does not load a 6b model unless
+  `FRAUD_ENABLE_STATEMENT_MODEL=1` is set, e.g. after a candidate trained on
+  representative statements passes Stage B. The description below is what the node
+  does when a model is enabled.
 - Scores the whole document for how likely it is to be tampered, from file-level
   features: fonts, editor traces in the metadata, and whether the running balances
   add up row by row.

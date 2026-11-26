@@ -145,9 +145,13 @@ def _score_6b(handle, docs, dataset_id, guard):
 
 
 def _score_6a(handle, docs, dataset_id):
-    """Statement scores = max row probability. Returns (BaselineScores-like, per-doc scores)."""
+    """Statement scores = max row probability (row model) or one score per statement
+    (statement model). Returns (BaselineScores-like, per-doc scores)."""
     import numpy as np
     import pandas as pd
+
+    if isinstance(handle.bundle, dict) and handle.bundle.get("feature_set") == "statement":
+        return _score_6a_statement(handle, docs, dataset_id)
 
     rows = pd.concat([d.rows for d in docs], ignore_index=True)
     sc = baseline.score_a(handle, rows, dataset=dataset_id)
@@ -159,6 +163,29 @@ def _score_6a(handle, docs, dataset_id):
         out.append(float(np.max(sc.probs[pos:pos + n])) if n else 0.0)
         pos += n
     return sc, np.array(out, dtype=float)
+
+
+def _score_6a_statement(handle, docs, dataset_id):
+    """One probability per statement from the statement feature set; a statement too
+    short for the features scores 0.0 (the live node raises nothing for it either)."""
+    import numpy as np
+
+    from fraud_detect.ml.statement_behaviour import stage_b_features
+    from .features_s import records_from_rows
+
+    try:
+        bundle = handle.bundle
+        columns = list(bundle["feature_columns"])
+        scores = []
+        for d in docs:
+            f = stage_b_features(records_from_rows(d.rows))
+            scores.append(0.0 if f is None else float(
+                bundle["pipeline"].predict_proba([[f[c] for c in columns]])[0, 1]))
+        probs = np.array(scores, dtype=float)
+        return (baseline.BaselineScores("6a", dataset_id, baseline.STATUS_OK, None, probs,
+                                        np.zeros(len(probs), dtype=bool), handle.sha256), probs)
+    except Exception as exc:
+        return baseline._failed("6a", dataset_id, f"{type(exc).__name__}: {exc}", handle.sha256), None
 
 
 def _strip(basis: dict) -> dict:

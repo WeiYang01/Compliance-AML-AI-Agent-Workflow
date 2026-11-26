@@ -7,8 +7,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from fraud_detect.corpus.builder import CorpusBuilder
-from fraud_detect.corpus.schema import ALL_TAMPER_TYPES, BuildConfig
-from fraud_detect.ml.retraining.runner import N_LAYOUTS, design_tamper_mix, plan_counts
+from fraud_detect.corpus.schema import BuildConfig
+from fraud_detect.ml.retraining.runner import (
+    N_LAYOUTS, STAGE_B_TAMPER_TYPES, design_tamper_mix, plan_counts)
 
 # fixtures and constants of the CLI tests (the Env helper and its fixtures live there)
 from .test_cli import HELD_OUT_SEED, MINI_HOLD_OUT_LAYOUT, TRAIN_SEED, env, shared_cache  # noqa: F401
@@ -16,7 +17,7 @@ from .test_cli import HELD_OUT_SEED, MINI_HOLD_OUT_LAYOUT, TRAIN_SEED, env, shar
 
 def test_mix_has_all_types_and_resaved_is_10_of_26_parts():
     mix = dict(design_tamper_mix())
-    assert set(mix) == set(ALL_TAMPER_TYPES) and len(mix) == 17
+    assert set(mix) == set(STAGE_B_TAMPER_TYPES) and len(mix) == 17
     assert mix["genuine_resaved"] == 10.0
     assert all(w == 1.0 for t, w in mix.items() if t != "genuine_resaved")
     assert sum(mix.values()) == 26.0
@@ -35,7 +36,7 @@ def test_dealt_counts_match_the_plan_and_clear_the_resaved_gate(tmp_path):
     # quotas are rounded (largest remainder): the plan is the rounded-down count
     assert plan["genuine_resaved per seed"] <= resaved <= plan["genuine_resaved per seed"] + 1
     other = plan["other tamper types per seed"]
-    assert all(other <= types.count(t) <= other + 1 for t in ALL_TAMPER_TYPES if t != "genuine_resaved")
+    assert all(other <= types.count(t) <= other + 1 for t in STAGE_B_TAMPER_TYPES if t != "genuine_resaved")
     # genuine_resaved documents are genuine: share of all genuine documents
     assert resaved / (80 * 6 + resaved) >= 0.15
 
@@ -68,4 +69,4 @@ def test_build_passes_style_version_2_for_every_seed_and_the_held_out_seed(env):
     assert len(calls) == 3
     assert 20260899 in {c.master_seed for c in calls}
     assert all(c.style_version == 2 for c in calls)
-    assert all(set(dict(c.tamper_mix)) == set(ALL_TAMPER_TYPES) for c in calls)
+    assert all(set(dict(c.tamper_mix)) == set(STAGE_B_TAMPER_TYPES) for c in calls)

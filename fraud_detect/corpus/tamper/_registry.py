@@ -89,6 +89,10 @@ TAMPER_INFO: dict[str, TamperInfo] = dict([
        "Printed holder name differs from the registered name."),
     _i("subtle_amount_edit", "Document", ("overlay", "rerender"), "random", (),
        "One amount changed by 1.0% to 4.9%; balances recomputed or left as printed."),
+    _i("careful_edit", "Document", ("rewrite",), "yes", (),
+       "Money moved between two receipts of one month, rewritten in place in the page's own "
+       "text (no overlay, no appended save); totals and closing balance unchanged. Variants: "
+       "anchored (left start kept) and retypeset (uneven character spacing)."),
 ])
 
 assert set(TAMPER_INFO) == set(ALL_TAMPER_TYPES), "TAMPER_INFO must cover every ALL_TAMPER_TYPES name"

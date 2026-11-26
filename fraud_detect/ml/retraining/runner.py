@@ -31,6 +31,13 @@ N_LAYOUTS = 6
 MIX_PARTS = 26               # 16 original types + subtle_amount_edit (10 + 16 x 1)
 RESAVED_PER_26 = 10          # genuine_resaved share of the tampered mix: 10 of 26 parts
 TAMPER_TYPES_PER_26 = 1      # each of the other 16 types: 1 of 26 parts
+
+# The tamper types Stage B trains on, named explicitly rather than taken from ALL_TAMPER_TYPES:
+# a new Extra_Tamper_Type (e.g. careful_edit) must not silently change the training mix or the
+# 26-part design. Add one here on purpose, with the mix and its tests.
+from fraud_detect.corpus.schema import TAMPER_TYPES as _CORE_TAMPER_TYPES  # noqa: E402
+
+STAGE_B_TAMPER_TYPES: tuple = _CORE_TAMPER_TYPES + ("subtle_amount_edit",)
 INTEGRITY_GATE_IDS = frozenset({
     "corpus_seed", "company_split", "layout_separation", "held_out_seed", "uen_manifest",
     "awkward_overlap", "styling_balance", "resaved_share", "tamper_type_minimum",
@@ -51,6 +58,21 @@ class CliRunConfig(RunConfig):
 
     rule_c_scope: str = "all"          # "all" or "genuine_only" (open decision 4)
     plumbing: bool = False             # plumbing run: coverage gate reported, not enforced
+    # Node 6a feature set: "pdf" (row model, the original) or "statement" (one row per
+    # statement, fraud_detect.ml.statement_behaviour.STAGE_B_FEATURES, audited in audit-v2).
+    # "pdf" here is what a run.json WITHOUT the field means (every run made before the
+    # option existed). New runs default to "statement" on the command line (cli.py ``init``)
+    # and always record it, so an existing run is never re-read as a statement run.
+    node6a_feature_set: str = "pdf"
+
+    def canonical_json(self) -> str:
+        """As RunConfig, but the "pdf" Node 6a feature set is left out, so every run
+        configured before the option existed keeps its canonical JSON and run id."""
+        from .config import _to_jsonable
+        data = _to_jsonable(self)
+        if data.get("node6a_feature_set") == "pdf":
+            data.pop("node6a_feature_set")
+        return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
 
 def config_from_json(text: str) -> CliRunConfig:
@@ -188,7 +210,8 @@ def cmd_init(session: Session, args) -> int:
         real_style_role=args.real_style_role, target_fa_medium=fa_medium, target_fa_high=fa_high,
         real_style_dir=args.real_style_dir or str(session.output_root / "real_style"),
         forgery_dir=args.forgery_dir or str(session.output_root / "forgery_dataset"),
-        output_root=str(session.output_root), rule_c_scope=args.rule_c_scope, plumbing=bool(args.plumbing))
+        output_root=str(session.output_root), rule_c_scope=args.rule_c_scope, plumbing=bool(args.plumbing),
+        node6a_feature_set=getattr(args, "node6a_feature_set", "pdf"))
 
     ensure_ignored(session.output_root, is_ignored=session.guard)
     run_dir = session.output_root / "runs" / config.run_id
@@ -220,13 +243,12 @@ def cmd_init(session: Session, args) -> int:
 def design_tamper_mix() -> tuple:
     """The design's tamper mix: genuine_resaved 10 parts, each of the other 16 types 1 part (of 26).
 
-    The 16 types are the original ones plus subtle_amount_edit (``ALL_TAMPER_TYPES``). Without the
+    The 16 types are the original ones plus subtle_amount_edit (``STAGE_B_TAMPER_TYPES``). Without the
     mix the generator deals the types equally (about 6% re-saved genuine documents), which fails the
     15% re-saved gate in every Split.
     """
-    from fraud_detect.corpus.schema import ALL_TAMPER_TYPES
     return tuple((t, float(RESAVED_PER_26) if t == "genuine_resaved" else float(TAMPER_TYPES_PER_26))
-                 for t in ALL_TAMPER_TYPES)
+                 for t in STAGE_B_TAMPER_TYPES)
 
 
 def plan_counts(per_genuine: int, per_tampered: int, n_seeds: int) -> dict:
@@ -456,13 +478,17 @@ def cmd_check(session: Session, args) -> int:
 
 # ------------------------------------------------------------------------------ audit / leak
 def cmd_audit(session: Session, args) -> int:
-    from .audit import AUDIT_V1, validate
-    validate(AUDIT_V1)
-    data = {"version": AUDIT_V1.version, "digest": AUDIT_V1.digest(),
-            "entries": [dataclasses.asdict(e) for e in AUDIT_V1.entries]}
-    path = session.output_root / "audit" / "audit-v1.json"
-    session.write(path, json.dumps(data, indent=2, sort_keys=True))
-    print(f"Feature_Audit {AUDIT_V1.version} valid; digest {AUDIT_V1.digest()}; written to {path}")
+    """Validate and write every Feature_Audit version: audit-v1 (6a rows, 6b) and audit-v2
+    (audit-v1 plus the Node 6a statement features), so each digest a model bundle records
+    can be traced to a file."""
+    from .audit import AUDIT_V1, AUDIT_V2, validate
+    for audit in (AUDIT_V1, AUDIT_V2):
+        validate(audit)
+        data = {"version": audit.version, "digest": audit.digest(),
+                "entries": [dataclasses.asdict(e) for e in audit.entries]}
+        path = session.output_root / "audit" / f"{audit.version}.json"
+        session.write(path, json.dumps(data, indent=2, sort_keys=True))
+        print(f"Feature_Audit {audit.version} valid; digest {audit.digest()}; written to {path}")
     return EXIT_OK
 
 
@@ -501,7 +527,15 @@ def cmd_leak_test(session: Session, args) -> int:
     session.write(session.run_dir / "leak.json", json.dumps(
         json.loads(json.dumps(dataclasses.asdict(result), default=str)), indent=2, sort_keys=True))
     print_leak(result)
-    if result.blocked:
+    blocked = result.blocked
+    if session.config.node6a_feature_set == "statement":
+        result_s = run_leak_statement(session, statement_tables(session, training))
+        session.write(session.run_dir / "leak-6a-statement.json", json.dumps(
+            json.loads(json.dumps(dataclasses.asdict(result_s), default=str)), indent=2, sort_keys=True))
+        print("Node 6a statement features:")
+        print_leak(result_s)
+        blocked = blocked or result_s.blocked
+    if blocked:
         print("Leak_Test: suspects wait for a decision")
         return EXIT_WAITING
     print("Leak_Test: no undecided suspect")
@@ -580,6 +614,59 @@ def _train_6a(session: Session, training: List[Loaded], gate_results, ledger_see
     return out
 
 
+def statement_tables(session: Session, training: List[Loaded]) -> dict:
+    """Node 6a statement feature tables, one per training seed (statement feature set)."""
+    from .features_a import load_row_table
+    from .features_s import build_statement_table
+
+    th = session.config.thresholds
+    out = {}
+    for x in training:
+        rows = load_row_table(x.path, cache_root=session.cache_dir, is_ignored=session.guard,
+                              row_exclusion_max_share=th.row_exclusion_max_share).rows
+        out[x.corpus.master_seed] = build_statement_table(rows, x.corpus.docs)
+    return out
+
+
+def run_leak_statement(session: Session, stables: dict):
+    """Leak_Test on the Node 6a statement features (audit-v2), pooled over seeds."""
+    import pandas as pd
+    from .audit import AUDIT_V2, STATEMENT_NODE
+    from .leak import leak_test
+    frame = pd.concat([stables[s].frame for s in sorted(stables)], ignore_index=True)
+    train, valid = frame[frame["split"] == "train"], frame[frame["split"] == "validation"]
+    return leak_test(train, valid, AUDIT_V2, session.config.thresholds, session.decisions(),
+                     forgery=None, node=STATEMENT_NODE)
+
+
+def _train_6a_statement(session: Session, stables: dict) -> dict:
+    import pandas as pd
+    from .audit import AUDIT_V2
+    from .train_s import LEVEL, train_statement_candidate
+
+    cfg = session.config
+    rule = session.cutoff_rule(LEVEL)
+    common = dict(audit=AUDIT_V2, rule=rule, held_out_layout=cfg.held_out_layout, is_ignored=session.guard)
+    out = {}
+    for seed in sorted(stables):
+        st = stables[seed]
+        res = train_statement_candidate(st.frame, out_path=session.run_dir / "models" / "6a" / f"seed-{seed}.joblib",
+                                        master_seed=seed, left_out_no_fraud_row=st.left_out_no_fraud_row, **common)
+        out[seed] = res
+        for line in _curve_lines(f"Node 6a (statement) seed {seed}", res.bundle["validation_curve"]):
+            print(line)
+        print(f"Node 6a (statement) seed {seed}: {st.left_out_no_fraud_row} tampered statement(s) with "
+              f"untouched transactions and {st.too_short} too-short statement(s) left out")
+    pooled = pd.concat([stables[s].frame for s in sorted(stables)], ignore_index=True)
+    left_out = sum(stables[s].left_out_no_fraud_row for s in stables)
+    release = train_statement_candidate(pooled, out_path=session.run_dir / "release" / "6a.joblib",
+                                        master_seed=None, left_out_no_fraud_row=left_out, **common)
+    for line in _curve_lines("Node 6a (statement) release", release.bundle["validation_curve"]):
+        print(line)
+    out["release"] = release
+    return out
+
+
 def _train_6b(session: Session, training: List[Loaded], tables: dict, gate_results, leak) -> dict:
     from .audit import AUDIT_V1
     from .train_b import train_run
@@ -640,14 +727,23 @@ def cmd_train(session: Session, args) -> int:
     training, held, tables, results = run_all_gates(session)
     open_waivable = [r for r in results if not r.passed and r.waivable]
     leak = run_leak(session, training, tables)
-    if open_waivable or leak.blocked:
+    statement = session.config.node6a_feature_set == "statement" and args.node in ("6a", "both")
+    stables = statement_tables(session, training) if statement else None
+    leak_s = run_leak_statement(session, stables) if statement else None
+    if open_waivable or leak.blocked or (leak_s is not None and leak_s.blocked):
         print_gates(open_waivable)
         print_leak(leak)
+        if leak_s is not None:
+            print("Node 6a statement features:")
+            print_leak(leak_s)
         print("Training refused: the items above wait for a decision (exit 3). "
               "Nothing was fitted and no model file was written.")
         return EXIT_WAITING
     print_gates(results)
     print_leak(leak)
+    if leak_s is not None:
+        print("Node 6a statement features:")
+        print_leak(leak_s)
 
     ledger = SeedLedger(session.run_dir, is_ignored=session.guard, clock=session.clock)
     seeds = list(session.config.seeds)
@@ -659,7 +755,8 @@ def cmd_train(session: Session, args) -> int:
         if "6b" in nodes:
             trained["6b"] = _train_6b(session, training, tables, results, leak)
         if "6a" in nodes:
-            trained["6a"] = _train_6a(session, training, results, seeds)
+            trained["6a"] = (_train_6a_statement(session, stables) if statement
+                             else _train_6a(session, training, results, seeds))
     except BaseException as exc:
         for s in seeds:
             with_reason = f"{type(exc).__name__}: {exc}"
@@ -1123,6 +1220,17 @@ def build_report(session, training, held, bundles, held_bundle, real, failures, 
         leak_auc = {r["feature"]: r["auc"] for r in json.loads(leak_path.read_text(encoding="utf-8"))["rows"]}
     audit_rows = tuple(AuditRow(e.name, e.decision, e.measures, leak_auc.get(e.name), e.note)
                        for e in AUDIT_V1.entries if e.section == "model_feature" and e.node == "6b")
+    if cfg.node6a_feature_set == "statement":
+        # The statement run's Node 6a inputs are audited in audit-v2; list them too, with
+        # the AUCs from leak-6a-statement.json when the leak-test command has written it.
+        from .audit import AUDIT_V2, STATEMENT_NODE
+        s_auc = {}
+        s_path = run_dir / "leak-6a-statement.json"
+        if s_path.is_file():
+            s_auc = {r["feature"]: r["auc"] for r in json.loads(s_path.read_text(encoding="utf-8"))["rows"]}
+        audit_rows += tuple(AuditRow(e.name, e.decision, e.measures, s_auc.get(e.name), e.note)
+                            for e in AUDIT_V2.entries
+                            if e.section == "model_feature" and e.node == STATEMENT_NODE)
 
     uens = {d.uen for d in held.corpus.docs if d.uen}
     gnn_path = session.models_dir / "gnn_scores.json"
