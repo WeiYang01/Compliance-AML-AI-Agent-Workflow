@@ -58,7 +58,8 @@ Commands
             ``<output-root>/corpora``, runs the integrity gates, writes ``<run>/gates.json``,
             prints every failing gate with its offenders; exit 0 or 2. Waivable gates are
             printed but do not fail ``check``.
-    audit   writes ``<output-root>/audit/audit-v1.json`` ({"version", "digest", "entries"}).
+    audit   writes ``<output-root>/audit/audit-v1.json`` and ``audit-v2.json`` (audit-v1 plus the
+            Node 6a statement features), each {"version", "digest", "entries"}.
     leak-test  prints ``suspect: <name>`` per suspect not covered by a decision; exit 3 while
             any exists; writes ``<run>/leak.json``.
     train   [--node {6a,6b,both}]  Order: integrity gates (exit 2) -> capability/subtle gates
@@ -535,6 +536,15 @@ def test_audit_writes_audit_v1_json(ready):
     data = _read_json(ready.output_root / "audit" / "audit-v1.json")
     assert data["version"] == "audit-v1" and data["digest"] == AUDIT_V1.digest()
     assert len(data["entries"]) == len(AUDIT_V1.entries)
+
+
+def test_audit_also_writes_audit_v2_json(ready):
+    from fraud_detect.ml.retraining.audit import AUDIT_V2
+    res = ready.invoke("audit")
+    assert res.code == 0, res.out
+    data = _read_json(ready.output_root / "audit" / "audit-v2.json")
+    assert data["version"] == "audit-v2" and data["digest"] == AUDIT_V2.digest()
+    assert len(data["entries"]) == len(AUDIT_V2.entries)
 
 
 # ------------------------------------------------------------------------------ decide

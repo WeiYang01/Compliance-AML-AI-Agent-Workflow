@@ -175,3 +175,31 @@ def test_plumbing_run_with_the_statement_feature_set(prepared, shared_cache, tmp
     compare = env.invoke("compare")
     assert compare.code == 0, compare.out
     assert "Node 6a" in compare.out
+    report = (env.run_dir / "comparison_report.md").read_text()
+    for name in STAGE_B_FEATURES:  # the statement inputs appear in the report's audit table
+        assert f"| {name} |" in report, name
+
+
+# ---- the offline like-for-like comparison ----------------------------------------------------------
+
+def test_like_for_like_cutoff_keeps_false_alarms_within_the_target():
+    from fraud_detect.ml.retraining.like_for_like_6a import cutoff_at, metrics
+    genuine = [i / 100 for i in range(100)]
+    scores, labels = genuine + [0.995, 0.5], [0] * 100 + [1, 1]
+    for fa in (0.05, 0.01):
+        c = cutoff_at(scores, labels, fa)
+        m = metrics(scores, labels, {"x": c})
+        assert m["fa@x"] <= fa and m["fa@x"] >= fa - 0.01   # as many alerts as the target allows
+    assert metrics(scores, labels, {"x": cutoff_at(scores, labels, 0.01)})["catch@x"] == 0.5
+
+
+def test_like_for_like_summary_reports_both_models_per_set():
+    from fraud_detect.ml.retraining.like_for_like_6a import METRICS, summarise
+    ev = {f"{n}/{p}/{m}": dict({k: 0.5 for k in METRICS}, n_pos=1, n_neg=1)
+          for n in ("test", "heldout_seed") for p in ("core", "all") for m in ("row", "statement")}
+    doc = {"doc_id": "a", "y": 1, "pop": "core", "tamper": ["edited_amount"], "row": 0.9, "statement": 0.1}
+    seed = {"cutoffs": {"row": {"fa5": 0.5}, "statement": {"fa5": 0.5}}, "eval": ev,
+            "docs": {"heldout_seed": [doc, dict(doc, y=0, tamper=[])]}}
+    text = summarise({1: seed, 2: seed})
+    assert "synthetic data" in text and "heldout_seed / all" in text
+    assert "edited_amount" in text and "row 1.00  statement 0.00  either 1.00" in text

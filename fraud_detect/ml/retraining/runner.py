@@ -475,13 +475,17 @@ def cmd_check(session: Session, args) -> int:
 
 # ------------------------------------------------------------------------------ audit / leak
 def cmd_audit(session: Session, args) -> int:
-    from .audit import AUDIT_V1, validate
-    validate(AUDIT_V1)
-    data = {"version": AUDIT_V1.version, "digest": AUDIT_V1.digest(),
-            "entries": [dataclasses.asdict(e) for e in AUDIT_V1.entries]}
-    path = session.output_root / "audit" / "audit-v1.json"
-    session.write(path, json.dumps(data, indent=2, sort_keys=True))
-    print(f"Feature_Audit {AUDIT_V1.version} valid; digest {AUDIT_V1.digest()}; written to {path}")
+    """Validate and write every Feature_Audit version: audit-v1 (6a rows, 6b) and audit-v2
+    (audit-v1 plus the Node 6a statement features), so each digest a model bundle records
+    can be traced to a file."""
+    from .audit import AUDIT_V1, AUDIT_V2, validate
+    for audit in (AUDIT_V1, AUDIT_V2):
+        validate(audit)
+        data = {"version": audit.version, "digest": audit.digest(),
+                "entries": [dataclasses.asdict(e) for e in audit.entries]}
+        path = session.output_root / "audit" / f"{audit.version}.json"
+        session.write(path, json.dumps(data, indent=2, sort_keys=True))
+        print(f"Feature_Audit {audit.version} valid; digest {audit.digest()}; written to {path}")
     return EXIT_OK
 
 
@@ -1213,6 +1217,17 @@ def build_report(session, training, held, bundles, held_bundle, real, failures, 
         leak_auc = {r["feature"]: r["auc"] for r in json.loads(leak_path.read_text(encoding="utf-8"))["rows"]}
     audit_rows = tuple(AuditRow(e.name, e.decision, e.measures, leak_auc.get(e.name), e.note)
                        for e in AUDIT_V1.entries if e.section == "model_feature" and e.node == "6b")
+    if cfg.node6a_feature_set == "statement":
+        # The statement run's Node 6a inputs are audited in audit-v2; list them too, with
+        # the AUCs from leak-6a-statement.json when the leak-test command has written it.
+        from .audit import AUDIT_V2, STATEMENT_NODE
+        s_auc = {}
+        s_path = run_dir / "leak-6a-statement.json"
+        if s_path.is_file():
+            s_auc = {r["feature"]: r["auc"] for r in json.loads(s_path.read_text(encoding="utf-8"))["rows"]}
+        audit_rows += tuple(AuditRow(e.name, e.decision, e.measures, s_auc.get(e.name), e.note)
+                            for e in AUDIT_V2.entries
+                            if e.section == "model_feature" and e.node == STATEMENT_NODE)
 
     uens = {d.uen for d in held.corpus.docs if d.uen}
     gnn_path = session.models_dir / "gnn_scores.json"

@@ -1103,7 +1103,7 @@ Run all commands from the repository root. Every command accepts `--help`.
 python -m fraud_detect.ml.retraining init      # write run.json: hashes, code fingerprint, Switch_Rule, cutoff rule
 python -m fraud_detect.ml.retraining build     # build the seed corpora and the held-out-seed corpus
 python -m fraud_detect.ml.retraining check     # integrity gates; "check --plan" prints document counts
-python -m fraud_detect.ml.retraining audit     # audit the Corpus, writes audit/audit-v1.json
+python -m fraud_detect.ml.retraining audit     # audit the Corpus, writes audit/audit-v1.json and audit-v2.json
 python -m fraud_detect.ml.retraining leak-test # Leak_Test on synthetic data
 python -m fraud_detect.ml.retraining decide    # record a decision: leak-feature, waive-gate, investigation, awkward-review
 python -m fraud_detect.ml.retraining train     # freeze cutoffs, fit Candidate models (6b and 6a)
@@ -1180,7 +1180,42 @@ Node 6a's row model scores one transaction at a time, so it cannot see statement
 - **Gates.** The statement features get their own Leak_Test (`leak-6a-statement.json`), which blocks training the same way the Node 6b Leak_Test does.
 - **Default unchanged.** The default stays `pdf`: a run configured without the option keeps its run id, its audit-v1 and its row model.
 - **Live node.** A switched statement bundle is read by `ml_transaction`, which scores the whole statement once and raises at most one `ML_TXN_STATEMENT_RISK` finding at the bundle's statement-level cutoffs.
-- **Status.** No full Stage B run has been made with this feature set yet. The fast residual experiment ("Step 3" below) is the only measurement so far, on synthetic data and not real-world accuracy: AUC 0.71 to 0.75 on held-out data with a feature set that still included round amounts.
+- **Audit files.** `audit` writes both `audit/audit-v1.json` and `audit/audit-v2.json`, so the digest a statement bundle records can be traced to a file. In a statement run the comparison report's audit table also lists the statement features, with their Leak_Test AUCs on synthetic data.
+
+#### Full run (synthetic data, not real-world accuracy)
+
+One full run per feature set on the same corpora: `build --per-layout-genuine 80 --per-layout-tampered 80`, i.e. 5 training seeds plus the held-out seed, 960 statements each, with `two_col_ddmmyy_cr` held out as the unseen layout.
+
+- **Gates and leak tests** (all on synthetic data). All 12 integrity gates passed. No Leak_Test suspect: the simple models reach validation AUC 0.64 on the 6b features and 0.67 on the statement features.
+- **Node 6b** fails its cutoff target (no high cutoff reaches a 1% false-alarm rate; the closest is 2.1%), so `train` stops before Node 6a; `train --node 6a` trains 6a alone.
+- **Row model** fails the same target on seed 20260804, so it has no release candidate.
+- **Statement model** trains on every seed and is frozen. From `compare` (release candidate, medium cutoff):
+
+| Data (synthetic data) | ROC-AUC | PR-AUC | Catch rate | False-alarm rate |
+|---|---|---|---|---|
+| Test split | 0.69 | 0.58 | 34% | 4.8% |
+| Unseen layout | 0.70 | 0.60 | 36% | 5.0% |
+| Held-out seed | 0.68 | 0.57 | 37% | 6.5% |
+
+The result on this synthetic data is `keep`: there is no Current model to compare with, and with `real_style_role=required` no switch is possible.
+
+#### Row model against statement model, on the same documents
+
+`compare` cannot set the two side by side when the row model has no release. `python -m fraud_detect.ml.retraining.like_for_like_6a` does it offline: for each training seed it fits both models on the train split with the code `train` uses, fixes each model's cutoffs on validation at a 5% and a 1% false-alarm rate, and scores both on the same test, unseen-layout and held-out-seed statements. It releases nothing and records no decision. Means over the 5 seeds, on synthetic data, held-out seed (222 tampered and 665 genuine statements; "core" as in the labels above):
+
+| Metric (synthetic data) | Row model | Statement model | Statement higher |
+|---|---|---|---|
+| ROC-AUC | 0.657 | 0.663 | 3 / 5 seeds |
+| PR-AUC | 0.502 | 0.553 | 4 / 5 |
+| Catch at the 5% cutoff | 30.5% | 33.9% | 4 / 5 |
+| False alarms at the 5% cutoff | 7.8% | 5.3% | lower in 4 / 5 |
+| Catch at the 1% cutoff | 20.8% | 28.8% | 4 / 5 |
+
+- **Ranking is a tie.** The ROC-AUC difference is +0.006, and on every seed the 95% interval of a paired bootstrap (about ±0.05 wide) includes zero. Neither feature set ranks statements better overall.
+- **The statement model is better where it is used: at strict cutoffs.** It catches about 8 points more at the 1% cutoff, and its cutoffs carry over to new data (5.3% false alarms against a 5% target, against 7.8% and up to 12% for the row model). That drift is why the row model fails the cutoff target.
+- **They catch different fraud.** At the 5% cutoffs the statement model catches `turnover_inflation` (58% against 19%), `fabricated_receipts` (35% against 9%) and `dormant_reactivation` (90% against 32%); the row model catches `cross_month_copy` (17% against 3%) and `rapid_pass_through` (76% against 62%). Flagging when either model fires catches about 40% of tampered statements, but at about 12.5% false alarms.
+- **Neither sees document edits.** `edited_amount`, `subtle_amount_edit`, `altered_date` and `font_mismatch` stay at or below 10% for both: those are for Nodes 2 and 3.
+- **Limits.** Synthetic data only. Two tamper types (`sudden_large_deposit`, `shell_counterparty`) are caught almost always by both and lift every number. This is not a residual measurement: Step 3 below measures what the models add beyond the rules.
 
 ### Labels and open decisions
 
