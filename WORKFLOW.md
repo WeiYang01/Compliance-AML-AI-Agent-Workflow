@@ -54,9 +54,9 @@ flowchart TD
 ```
 
 **Reading the diagram:** solid arrows are the always-on flow. Nodes 6a/6b are
-wired in (models loaded at startup) and run on every screening, except 6a's
-transaction scoring, which is off by default (`FRAUD_ENABLE_TXN_MODEL=1` turns it
-on). Both stay fail-safe, producing no findings if a model file is missing. The one dotted,
+wired in, but only part of them runs: 6a's GNN lookup runs on every screening; 6a's
+transaction scoring is off by default (`FRAUD_ENABLE_TXN_MODEL=1` turns it on); and
+6b has no live model (`FRAUD_ENABLE_STATEMENT_MODEL=1` loads one). Both stay fail-safe, producing no findings if a model file is missing. The one dotted,
 conditional step left is Node 5, which runs only when a case store is supplied.
 
 ## What each node does (in plain terms)
@@ -155,7 +155,16 @@ conditional step left is Node 5, which runs only when a case store is supplied.
   findings (the node is skipped) rather than crashing the screening.
 - Adds evidence only; never auto-rejects.
 
-### Node 6b — ML Statement Forgery (machine-learning, active)
+### Node 6b — ML Statement Forgery (machine-learning, no live model)
+- **No live model (owner decision).** In the full Stage B run on synthetic data, the
+  6b candidate failed its cutoff target (no cutoff reaches a 1% false-alarm rate; the
+  best was 2.1%) and its validation curves were close to chance. The target was not
+  loosened. The Node 2 typography rule (`VF_SPACING_OUTLIER`, `VF_COLUMN_MISALIGNED`)
+  measures the same signals and beat a model on them in the step 3 experiment, so it
+  does the job instead. The live app does not load a 6b model unless
+  `FRAUD_ENABLE_STATEMENT_MODEL=1` is set, e.g. after a candidate trained on
+  representative statements passes Stage B. The description below is what the node
+  does when a model is enabled.
 - Scores the whole document for how likely it is to be tampered, from file-level
   features: fonts, editor traces in the metadata, and whether the running balances
   add up row by row.

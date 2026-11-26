@@ -1187,7 +1187,7 @@ Node 6a's row model scores one transaction at a time, so it cannot see statement
 One full run per feature set on the same corpora: `build --per-layout-genuine 80 --per-layout-tampered 80`, i.e. 5 training seeds plus the held-out seed, 960 statements each, with `two_col_ddmmyy_cr` held out as the unseen layout.
 
 - **Gates and leak tests** (all on synthetic data). All 12 integrity gates passed. No Leak_Test suspect: the simple models reach validation AUC 0.64 on the 6b features and 0.67 on the statement features.
-- **Node 6b** fails its cutoff target (no high cutoff reaches a 1% false-alarm rate; the closest is 2.1%), so `train` stops before Node 6a; `train --node 6a` trains 6a alone.
+- **Node 6b** fails its cutoff target (no high cutoff reaches a 1% false-alarm rate; the closest is 2.1%), so `train` stops before Node 6a; `train --node 6a` trains 6a alone. **Owner decision: Node 6b has no live model.** The target is not loosened; the Node 2 typography rule covers these signals (see "Step 3"), and the live app loads a 6b model only when `FRAUD_ENABLE_STATEMENT_MODEL=1` is set.
 - **Row model** fails the same target on seed 20260804, so it has no release candidate.
 - **Statement model** trains on every seed and is frozen. From `compare` (release candidate, medium cutoff):
 

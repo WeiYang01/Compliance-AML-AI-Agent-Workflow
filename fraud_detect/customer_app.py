@@ -113,9 +113,11 @@ GNN_SCORES = gnn_lookup.load_scores()
 # models must be loaded and passed here, or Nodes 6a/6b never run in production.
 # Both loaders are fail-safe: they return None when the .joblib file is absent,
 # and the pipeline then skips that node. 6a's transaction scoring stays off
-# unless FRAUD_ENABLE_TXN_MODEL is set (see ml_transaction.ENABLE_ENV).
+# unless FRAUD_ENABLE_TXN_MODEL is set (see ml_transaction.ENABLE_ENV). Node 6b has
+# no live model (owner decision; the Node 2 typography rule covers it) unless
+# FRAUD_ENABLE_STATEMENT_MODEL is set (see ml_statement.ENABLE_ENV).
 TXN_MODEL = ml_transaction.load_live_model()
-STATEMENT_MODEL = ml_statement.load_model()
+STATEMENT_MODEL = ml_statement.load_live_model()
 
 
 # --------------------------------------------------------------------------- #
